@@ -26,7 +26,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run dist
+        run: npx vite build && npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -34,11 +34,7 @@ jobs:
         run: Compress-Archive -Path release\win-unpacked\* -DestinationPath release\NSZ-Desktop-win-unpacked.zip
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: false
-          generate_release_notes: true
-          files: |
-            release/NSZ-Desktop-Portable.exe
-            release/NSZ-Desktop-Setup.exe
-            release/NSZ-Desktop-win-unpacked.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} --title "Release ${{ github.ref_name }}" --generate-notes release/NSZ-Desktop-Portable.exe release/NSZ-Desktop-Setup.exe release/NSZ-Desktop-win-unpacked.zip
