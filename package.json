@@ -33,15 +33,26 @@
       "target": [
         {
           "target": "portable",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "dir",
+          "arch": ["x64"]
         }
       ],
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "NSZ-Desktop.exe"
+      "artifactName": "NSZ-Desktop-Portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "NSZ-Desktop-Setup.exe"
     },
     "asar": true
   },
