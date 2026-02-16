@@ -22,7 +22,6 @@ class NszRunner extends EventEmitter {
     }
 
     static validateNszDir(dirPath) {
-        // Check if the directory contains both nsz.exe and squirrel.exe
         return fs.existsSync(path.join(dirPath, 'nsz.exe')) &&
                fs.existsSync(path.join(dirPath, 'squirrel.exe'));
     }
@@ -124,9 +123,8 @@ class NszRunner extends EventEmitter {
             const text = data.toString('utf-8');
             stdoutBuffer += text;
 
-            // Process complete lines (split on both \n and \r)
             const lines = stdoutBuffer.split(/[\r\n]+/);
-            stdoutBuffer = lines.pop(); // keep incomplete line in buffer
+            stdoutBuffer = lines.pop();
 
             for (const line of lines) {
                 const trimmed = line.trim();
@@ -138,7 +136,6 @@ class NszRunner extends EventEmitter {
 
         this.process.stderr.on('data', (data) => {
             const text = data.toString('utf-8');
-            // Strip ANSI escape codes
             const clean = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
             const segments = clean.split(/[\r\n]+/);
             for (const seg of segments) {
@@ -168,8 +165,7 @@ class NszRunner extends EventEmitter {
     _parseLine(line) {
         this.emit('output', line);
 
-        // Detect "[ADDING]" lines to calculate expected output file size
-        // Pattern: "[ADDING]     filename 0xSIZE bytes to PFS0 at 0xOFFSET"
+        // [ADDING] lines carry the file size used to estimate decompression progress
         const addingMatch = line.match(/^\[ADDING\s*\]\s+\S+\s+0x([0-9a-fA-F]+)\s+bytes/);
         if (addingMatch) {
             const size = parseInt(addingMatch[1], 16);
@@ -178,17 +174,14 @@ class NszRunner extends EventEmitter {
             return;
         }
 
-        // Detect "Decompressing X -> Y" to get the output file path
         const decompressMatch = line.match(/^Decompressing\s+.+\s+->\s+(.+)$/);
         if (decompressMatch) {
             this._outputFilePath = decompressMatch[1].trim();
             this.emit('status', { action: 'DECOMPRESS', detail: line });
-            // Start file monitoring after a short delay (file needs to be created)
             setTimeout(() => this._startFileProgressMonitor(), 1000);
             return;
         }
 
-        // Detect progress patterns from nsz output (percentage text)
         const percentMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
         if (percentMatch) {
             this.emit('progress', {
@@ -198,7 +191,6 @@ class NszRunner extends EventEmitter {
             return;
         }
 
-        // Pattern: "[VERIFY ...], [OPEN ...], [EXISTS ...], etc."
         const actionMatch = line.match(/^\[(\w+)\s*(?:\w*)\]\s*(.*)/);
         if (actionMatch) {
             this.emit('status', {
@@ -208,7 +200,6 @@ class NszRunner extends EventEmitter {
             return;
         }
 
-        // Pattern: "Done!"
         if (line.includes('Done!')) {
             this._stopFileProgressMonitor();
             this.emit('progress', { percent: 100, message: 'Done!' });
@@ -259,7 +250,6 @@ class NszRunner extends EventEmitter {
         if (this.process) {
             this._stopFileProgressMonitor();
             this.process.kill('SIGTERM');
-            // Force kill after 3 seconds if still alive
             setTimeout(() => {
                 if (this.process) {
                     this.process.kill('SIGKILL');

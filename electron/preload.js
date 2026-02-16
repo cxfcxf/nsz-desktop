@@ -1,5 +1,16 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+/**
+ * Subscribe to an IPC channel, returning an unsubscribe function.
+ */
+function onChannel(channel) {
+    return (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on(channel, handler);
+        return () => ipcRenderer.removeListener(channel, handler);
+    };
+}
+
 contextBridge.exposeInMainWorld('nszAPI', {
     // Setup
     getNszDir: () => ipcRenderer.invoke('setup:getNszDir'),
@@ -17,72 +28,29 @@ contextBridge.exposeInMainWorld('nszAPI', {
     selectFiles: (filters) => ipcRenderer.invoke('dialog:openFiles', filters),
     selectOutputDir: () => ipcRenderer.invoke('dialog:openDir'),
 
-    // Events from main process
-    onProgress: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('nsz:progress', handler);
-        return () => ipcRenderer.removeListener('nsz:progress', handler);
-    },
-    onOutput: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('nsz:output', handler);
-        return () => ipcRenderer.removeListener('nsz:output', handler);
-    },
-    onStatus: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('nsz:status', handler);
-        return () => ipcRenderer.removeListener('nsz:status', handler);
-    },
-    onDone: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('nsz:done', handler);
-        return () => ipcRenderer.removeListener('nsz:done', handler);
-    },
-    onError: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('nsz:error', handler);
-        return () => ipcRenderer.removeListener('nsz:error', handler);
-    },
-    onLog: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('nsz:log', handler);
-        return () => ipcRenderer.removeListener('nsz:log', handler);
-    },
+    // NSZ events
+    onProgress: onChannel('nsz:progress'),
+    onOutput: onChannel('nsz:output'),
+    onStatus: onChannel('nsz:status'),
+    onDone: onChannel('nsz:done'),
+    onError: onChannel('nsz:error'),
+    onLog: onChannel('nsz:log'),
 
     // Merge operations
     mergeFiles: (files, options) => ipcRenderer.invoke('merge:start', files, options),
     cancelMerge: () => ipcRenderer.invoke('merge:cancel'),
     hasSquirrel: () => ipcRenderer.invoke('merge:hasSquirrel'),
 
-    onMergeProgress: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('merge:progress', handler);
-        return () => ipcRenderer.removeListener('merge:progress', handler);
-    },
-    onMergeOutput: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('merge:output', handler);
-        return () => ipcRenderer.removeListener('merge:output', handler);
-    },
-    onMergeDone: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('merge:done', handler);
-        return () => ipcRenderer.removeListener('merge:done', handler);
-    },
-    onMergeError: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('merge:error', handler);
-        return () => ipcRenderer.removeListener('merge:error', handler);
-    },
-    onMergeLog: (callback) => {
-        const handler = (_event, data) => callback(data);
-        ipcRenderer.on('merge:log', handler);
-        return () => ipcRenderer.removeListener('merge:log', handler);
-    },
+    // Merge events
+    onMergeProgress: onChannel('merge:progress'),
+    onMergeOutput: onChannel('merge:output'),
+    onMergeDone: onChannel('merge:done'),
+    onMergeError: onChannel('merge:error'),
+    onMergeLog: onChannel('merge:log'),
 
     // Keys
     hasKeys: () => ipcRenderer.invoke('setup:hasKeys'),
-    openToolsDir: () => ipcRenderer.invoke('setup:openToolsDir'),
+    importKeys: () => ipcRenderer.invoke('setup:importKeys'),
 
     // Settings
     loadSettings: () => ipcRenderer.invoke('settings:load'),

@@ -17,14 +17,7 @@ Built with Electron + React + Vite.
 
 ## Prerequisites
 
-Place your `prod.keys` (or `keys.txt`) file in the `tools/` directory next to the bundled executables. This file contains your Switch console's encryption keys and is required for all operations.
-
-```
-tools/
-  nsz.exe        (included)
-  squirrel.exe   (included)
-  prod.keys      <-- you provide this
-```
+You need your Switch console's encryption keys (`prod.keys` or `keys.txt`). On first launch, the app will prompt you to select your keys file.
 
 ## Download
 
@@ -38,7 +31,7 @@ Grab the latest release from the [Releases](https://github.com/cxfcxf/nsz-deskto
 ## Usage
 
 1. Run the app
-2. On first launch, place your `prod.keys` in the `tools/` directory when prompted
+2. On first launch, the setup wizard will prompt you to select your `prod.keys` file
 3. Use the sidebar to navigate between Compress, Decompress, Merge, File Info, and Settings
 
 ## Building the Tool Executables

@@ -11,7 +11,6 @@ class MergeRunner extends EventEmitter {
         this.nszDir = nszDir;
         this.squirrelPath = nszDir ? path.join(nszDir, 'squirrel.exe') : null;
         this._tmpFile = null;
-        this._totalFiles = 0;
         this._appendedFiles = 0;
         this._phase = '';
     }
@@ -48,7 +47,6 @@ class MergeRunner extends EventEmitter {
         const format = options.format || 'xci';
 
         // Reset progress tracking
-        this._totalFiles = 0;
         this._appendedFiles = 0;
         this._phase = 'calculating';
 
@@ -100,18 +98,15 @@ class MergeRunner extends EventEmitter {
 
         this.process.stderr.on('data', (data) => {
             const text = data.toString('utf-8');
-            // Strip ANSI escape codes
             const clean = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
             stderrBuffer += clean;
 
-            // tqdm uses \r to overwrite lines — split on both \r and \n
             const segments = stderrBuffer.split(/[\r\n]+/);
-            stderrBuffer = segments.pop(); // keep incomplete segment
+            stderrBuffer = segments.pop();
 
             for (const seg of segments) {
                 const trimmed = seg.trim();
                 if (!trimmed) continue;
-                // Parse tqdm progress (e.g. " 45%|████| 450M/1000M [00:05<00:06, 85MB/s]")
                 const tqdmMatch = trimmed.match(/\s*(\d+)%\|/);
                 if (tqdmMatch) {
                     const tqdmPercent = parseInt(tqdmMatch[1]);
@@ -149,14 +144,12 @@ class MergeRunner extends EventEmitter {
     _parseLine(line) {
         this.emit('merge-output', line);
 
-        // Phase: calculating content
         if (line.includes('Calculating final content')) {
             this._phase = 'calculating';
             this.emit('merge-progress', { percent: 2, message: 'Calculating final content...' });
             return;
         }
 
-        // Phase: filename determined — about to start writing
         if (line.startsWith('Filename:')) {
             this._phase = 'writing';
             const name = line.replace('Filename:', '').trim();
@@ -164,7 +157,6 @@ class MergeRunner extends EventEmitter {
             return;
         }
 
-        // Phase: writing headers
         if (line.includes('Writing XCI header') || line.includes('Writing NSP header')) {
             this.emit('merge-progress', { percent: 8, message: line.replace(/^[\s\-*]+/, '') });
             return;
@@ -174,7 +166,6 @@ class MergeRunner extends EventEmitter {
             return;
         }
 
-        // Phase: appending files (main work)
         if (line.includes('Appending:')) {
             this._appendedFiles++;
             const fileName = line.replace(/^[\s\-*]*Appending:\s*/, '').trim();
@@ -189,7 +180,6 @@ class MergeRunner extends EventEmitter {
             return;
         }
 
-        // Detect tqdm-style percentage in stdout too
         const percentMatch = line.match(/(\d+(?:\.\d+)?)\s*%/);
         if (percentMatch) {
             const pct = parseFloat(percentMatch[1]);
@@ -201,7 +191,6 @@ class MergeRunner extends EventEmitter {
             return;
         }
 
-        // Detect action patterns like [ADDING], [OPEN], etc.
         const actionMatch = line.match(/^\[(\w+)\s*(?:\w*)\]\s*(.*)/);
         if (actionMatch) {
             this.emit('merge-status', {
@@ -211,13 +200,11 @@ class MergeRunner extends EventEmitter {
             return;
         }
 
-        // Done detection
         if (line.includes('Done!') || line.includes('done!')) {
             this.emit('merge-progress', { percent: 100, message: 'Done!' });
             return;
         }
 
-        // Error detection
         if (line.toLowerCase().includes('error') || line.toLowerCase().includes('traceback')) {
             this.emit('merge-error', line);
             return;

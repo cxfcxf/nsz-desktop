@@ -4,6 +4,8 @@ const fs = require('fs');
 const NszRunner = require('./nsz-runner');
 const MergeRunner = require('./merge-runner');
 
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
 let mainWindow;
 let nszRunner;
 let mergeRunner;
@@ -36,13 +38,41 @@ function saveSettings(settings) {
  * In dev:        <project_root>/tools
  */
 function resolveToolsDir() {
-    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-    if (isDev) {
-        // dev: project root / tools
-        return path.join(__dirname, '..', 'tools');
-    }
-    // production: resources/tools (from extraResources)
+    if (isDev) return path.join(__dirname, '..', 'tools');
     return path.join(process.resourcesPath, 'tools');
+}
+
+/**
+ * Get the directory where the actual executable lives.
+ * For portable exe, this is where the user placed it (not the temp extraction dir).
+ * In dev, same as project root.
+ */
+function getExeDir() {
+    if (isDev) return path.join(__dirname, '..');
+    return path.dirname(app.getPath('exe'));
+}
+
+/**
+ * Sync keys from the exe directory into the tools directory.
+ * Users place prod.keys/keys.txt next to the portable exe;
+ * we copy it into tools/ so nsz.exe and squirrel.exe can find it.
+ */
+function syncKeysToToolsDir(toolsDir) {
+    const exeDir = getExeDir();
+    const keyNames = ['prod.keys', 'keys.txt'];
+
+    for (const name of keyNames) {
+        const src = path.join(exeDir, name);
+        const dst = path.join(toolsDir, name);
+        if (fs.existsSync(src) && !fs.existsSync(dst)) {
+            try {
+                fs.copyFileSync(src, dst);
+                console.log(`Copied ${name} from exe directory to tools directory`);
+            } catch (e) {
+                console.error(`Failed to copy ${name}:`, e);
+            }
+        }
+    }
 }
 
 function createWindow() {
@@ -75,8 +105,6 @@ function createWindow() {
         }
     });
 
-    // In development, load from Vite dev server
-    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
     if (isDev) {
         mainWindow.loadURL('http://localhost:5173');
     } else {
@@ -94,6 +122,8 @@ app.whenReady().then(() => {
     if (fs.existsSync(path.join(bundledToolsDir, 'nsz.exe')) &&
         fs.existsSync(path.join(bundledToolsDir, 'squirrel.exe'))) {
         toolsDir = bundledToolsDir;
+        // Copy keys from exe directory (where user places them) into tools dir
+        syncKeysToToolsDir(toolsDir);
     }
 
     nszRunner = new NszRunner(toolsDir);
@@ -127,6 +157,14 @@ app.whenReady().then(() => {
         return nszRunner.nszDir || null;
     });
 
+    function applyNszDir(dirPath) {
+        nszRunner.setNszDir(dirPath);
+        mergeRunner.setNszDir(dirPath);
+        const currentSettings = loadSettings();
+        currentSettings.nszDir = dirPath;
+        saveSettings(currentSettings);
+    }
+
     ipcMain.handle('setup:selectNszDir', async () => {
         const result = await dialog.showOpenDialog(mainWindow, {
             title: 'Select Tools Directory',
@@ -140,13 +178,7 @@ app.whenReady().then(() => {
             return { ok: false, error: 'nsz.exe and/or squirrel.exe not found in the selected directory.' };
         }
 
-        // Save and apply
-        nszRunner.setNszDir(dirPath);
-        mergeRunner.setNszDir(dirPath);
-        const currentSettings = loadSettings();
-        currentSettings.nszDir = dirPath;
-        saveSettings(currentSettings);
-
+        applyNszDir(dirPath);
         return { ok: true, path: dirPath };
     });
 
@@ -154,24 +186,47 @@ app.whenReady().then(() => {
         if (!NszRunner.validateNszDir(dirPath)) {
             return { ok: false, error: 'nsz.exe and/or squirrel.exe not found in that directory.' };
         }
-        nszRunner.setNszDir(dirPath);
-        mergeRunner.setNszDir(dirPath);
-        const currentSettings = loadSettings();
-        currentSettings.nszDir = dirPath;
-        saveSettings(currentSettings);
+        applyNszDir(dirPath);
         return { ok: true, path: dirPath };
     });
 
     ipcMain.handle('setup:hasKeys', async () => {
         const dir = nszRunner.nszDir;
         if (!dir) return false;
-        return fs.existsSync(path.join(dir, 'keys.txt')) || fs.existsSync(path.join(dir, 'prod.keys'));
+        // Check both the tools dir and the exe dir
+        const exeDir = getExeDir();
+        const hasInTools = fs.existsSync(path.join(dir, 'keys.txt')) || fs.existsSync(path.join(dir, 'prod.keys'));
+        const hasInExeDir = fs.existsSync(path.join(exeDir, 'keys.txt')) || fs.existsSync(path.join(exeDir, 'prod.keys'));
+        if (hasInExeDir && !hasInTools) {
+            syncKeysToToolsDir(dir);
+        }
+        return hasInTools || hasInExeDir;
     });
 
-    ipcMain.handle('setup:openToolsDir', async () => {
+    ipcMain.handle('setup:importKeys', async () => {
+        const result = await dialog.showOpenDialog(mainWindow, {
+            title: 'Select your encryption keys file',
+            properties: ['openFile'],
+            filters: [
+                { name: 'Keys Files', extensions: ['keys', 'txt'] },
+                { name: 'All Files', extensions: ['*'] },
+            ],
+        });
+        if (result.canceled || result.filePaths.length === 0) return { ok: false };
+
+        const srcFile = result.filePaths[0];
         const dir = nszRunner.nszDir;
-        if (dir && fs.existsSync(dir)) {
-            shell.openPath(dir);
+        if (!dir) return { ok: false, error: 'Tools directory not configured.' };
+
+        try {
+            // Always copy as both keys.txt and prod.keys so both exes find it
+            const dstKeys = path.join(dir, 'keys.txt');
+            const dstProd = path.join(dir, 'prod.keys');
+            fs.copyFileSync(srcFile, dstKeys);
+            fs.copyFileSync(srcFile, dstProd);
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, error: `Failed to copy keys: ${e.message}` };
         }
     });
 

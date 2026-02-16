@@ -1,6 +1,19 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 
 // ============================================================
+// Helpers
+// ============================================================
+
+function levelLabel(level) {
+    if (level <= 8) return 'Fast';
+    if (level <= 14) return 'Normal';
+    if (level <= 18) return 'Great';
+    return 'Ultra';
+}
+
+const EMPTY_PROGRESS = { percent: 0, message: '' };
+
+// ============================================================
 // Shared Components
 // ============================================================
 
@@ -135,6 +148,13 @@ function Toggle({ checked, onChange, label }) {
     );
 }
 
+function getOutputLineClass(line) {
+    if (line.toLowerCase().includes('error')) return 'error';
+    if (line.includes('Done!')) return 'success';
+    if (line.startsWith('[')) return 'info';
+    return '';
+}
+
 function ProgressDisplay({ progress, outputLines }) {
     const consoleRef = useRef(null);
 
@@ -161,13 +181,7 @@ function ProgressDisplay({ progress, outputLines }) {
             {outputLines.length > 0 && (
                 <div className="output-console" ref={consoleRef}>
                     {outputLines.map((line, i) => (
-                        <div
-                            key={i}
-                            className={`output-line ${line.toLowerCase().includes('error') ? 'error' :
-                                line.includes('Done!') ? 'success' :
-                                    line.startsWith('[') ? 'info' : ''
-                                }`}
-                        >
+                        <div key={i} className={`output-line ${getOutputLineClass(line)}`}>
                             {line}
                         </div>
                     ))}
@@ -200,11 +214,9 @@ function ToastContainer({ toasts }) {
 function CompressPage() {
     const [files, setFiles] = useState([]);
     const [running, setRunning] = useState(false);
-    const [progress, setProgress] = useState({ percent: 0, message: '' });
+    const [progress, setProgress] = useState(EMPTY_PROGRESS);
     const [outputLines, setOutputLines] = useState([]);
     const [outputDir, setOutputDir] = useState('');
-
-    // Options
     const [level, setLevel] = useState(18);
     const [block, setBlock] = useState(false);
     const [solid, setSolid] = useState(false);
@@ -217,19 +229,13 @@ function CompressPage() {
     useEffect(() => {
         if (!window.nszAPI) return;
         const unsubs = [
-            window.nszAPI.onProgress((data) => {
-                setProgress(data);
-            }),
-            window.nszAPI.onOutput((line) => {
-                setOutputLines(prev => [...prev.slice(-200), line]);
-            }),
+            window.nszAPI.onProgress(setProgress),
+            window.nszAPI.onOutput((line) => setOutputLines(prev => [...prev.slice(-200), line])),
             window.nszAPI.onDone((data) => {
                 setRunning(false);
                 setProgress({ percent: 100, message: `Completed (exit code: ${data.code})` });
             }),
-            window.nszAPI.onError((msg) => {
-                setOutputLines(prev => [...prev, `ERROR: ${msg}`]);
-            }),
+            window.nszAPI.onError((msg) => setOutputLines(prev => [...prev, `ERROR: ${msg}`])),
         ];
         return () => unsubs.forEach(fn => fn());
     }, []);
@@ -245,20 +251,18 @@ function CompressPage() {
     const handleStart = async () => {
         if (files.length === 0 || !window.nszAPI) return;
         setRunning(true);
-        setProgress({ percent: 0, message: 'Starting compression...' });
+        setProgress({ ...EMPTY_PROGRESS, message: 'Starting compression...' });
         setOutputLines([]);
 
-        const opts = {
-            level,
-            block: block || undefined,
-            solid: solid || undefined,
-            long: longMode || undefined,
-            verify: verify || undefined,
-            keep: keep || undefined,
-            threads: threads !== -1 ? threads : undefined,
-            overwrite: overwrite || undefined,
-            output: outputDir || undefined,
-        };
+        const opts = { level };
+        if (block) opts.block = true;
+        if (solid) opts.solid = true;
+        if (longMode) opts.long = true;
+        if (verify) opts.verify = true;
+        if (keep) opts.keep = true;
+        if (threads !== -1) opts.threads = threads;
+        if (overwrite) opts.overwrite = true;
+        if (outputDir) opts.output = outputDir;
 
         await window.nszAPI.compress(files, opts);
     };
@@ -266,7 +270,7 @@ function CompressPage() {
     const handleCancel = async () => {
         if (window.nszAPI) await window.nszAPI.cancel();
         setRunning(false);
-        setProgress({ percent: 0, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
     };
 
     const handleSelectOutputDir = async () => {
@@ -310,7 +314,7 @@ function CompressPage() {
                                     <span className="slider-value">{level}</span>
                                 </div>
                                 <span className="option-description">
-                                    {level <= 8 ? 'Fast' : level <= 14 ? 'Normal' : level <= 18 ? 'Great' : 'Ultra'}
+                                    {levelLabel(level)}
                                 </span>
                             </div>
 
@@ -384,7 +388,7 @@ function CompressPage() {
                             <>
                                 <button
                                     className="btn btn-secondary"
-                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress({ percent: 0, message: '' }); }}
+                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress(EMPTY_PROGRESS); }}
                                 >
                                     Clear All
                                 </button>
@@ -403,7 +407,7 @@ function CompressPage() {
 function DecompressPage() {
     const [files, setFiles] = useState([]);
     const [running, setRunning] = useState(false);
-    const [progress, setProgress] = useState({ percent: 0, message: '' });
+    const [progress, setProgress] = useState(EMPTY_PROGRESS);
     const [outputLines, setOutputLines] = useState([]);
     const [outputDir, setOutputDir] = useState('');
     const [verify, setVerify] = useState(false);
@@ -413,7 +417,7 @@ function DecompressPage() {
     useEffect(() => {
         if (!window.nszAPI) return;
         const unsubs = [
-            window.nszAPI.onProgress((data) => setProgress(data)),
+            window.nszAPI.onProgress(setProgress),
             window.nszAPI.onOutput((line) => setOutputLines(prev => [...prev.slice(-200), line])),
             window.nszAPI.onDone((data) => {
                 setRunning(false);
@@ -431,7 +435,7 @@ function DecompressPage() {
     const handleStart = async () => {
         if (files.length === 0 || !window.nszAPI) return;
         setRunning(true);
-        setProgress({ percent: 0, message: 'Starting decompression...' });
+        setProgress({ ...EMPTY_PROGRESS, message: 'Starting decompression...' });
         setOutputLines([]);
         await window.nszAPI.decompress(files, {
             verify: verify || undefined,
@@ -517,7 +521,7 @@ function DecompressPage() {
                             <>
                                 <button
                                     className="btn btn-secondary"
-                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress({ percent: 0, message: '' }); }}
+                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress(EMPTY_PROGRESS); }}
                                 >
                                     Clear All
                                 </button>
@@ -599,7 +603,7 @@ function InfoPage() {
 function MergePage() {
     const [files, setFiles] = useState([]);
     const [running, setRunning] = useState(false);
-    const [progress, setProgress] = useState({ percent: 0, message: '' });
+    const [progress, setProgress] = useState(EMPTY_PROGRESS);
     const [outputLines, setOutputLines] = useState([]);
     const [outputDir, setOutputDir] = useState('');
     const [format, setFormat] = useState('xci');
@@ -614,7 +618,7 @@ function MergePage() {
     useEffect(() => {
         if (!window.nszAPI) return;
         const unsubs = [
-            window.nszAPI.onMergeProgress((data) => setProgress(data)),
+            window.nszAPI.onMergeProgress(setProgress),
             window.nszAPI.onMergeOutput((line) => setOutputLines(prev => [...prev.slice(-200), line])),
             window.nszAPI.onMergeDone((data) => {
                 setRunning(false);
@@ -639,7 +643,7 @@ function MergePage() {
     const handleStart = async () => {
         if (files.length < 2 || !window.nszAPI) return;
         setRunning(true);
-        setProgress({ percent: 0, message: 'Starting merge...' });
+        setProgress({ ...EMPTY_PROGRESS, message: 'Starting merge...' });
         setOutputLines([]);
         await window.nszAPI.mergeFiles(files, {
             output: outputDir || undefined,
@@ -650,7 +654,7 @@ function MergePage() {
     const handleCancel = async () => {
         if (window.nszAPI) await window.nszAPI.cancelMerge();
         setRunning(false);
-        setProgress({ percent: 0, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
     };
 
     const handleSelectOutputDir = async () => {
@@ -753,7 +757,7 @@ function MergePage() {
                             <>
                                 <button
                                     className="btn btn-secondary"
-                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress({ percent: 0, message: '' }); }}
+                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress(EMPTY_PROGRESS); }}
                                 >
                                     Clear All
                                 </button>
@@ -1032,18 +1036,17 @@ function SetupPage({ onComplete, needsKeys }) {
         }
     };
 
-    const handleOpenToolsDir = async () => {
-        if (window.nszAPI) await window.nszAPI.openToolsDir();
-    };
-
-    const handleRefresh = async () => {
+    const handleImportKeys = async () => {
         if (!window.nszAPI) return;
-        const has = await window.nszAPI.hasKeys();
-        if (has) {
+        setError('');
+        setChecking(true);
+        const result = await window.nszAPI.importKeys();
+        setChecking(false);
+        if (result.ok) {
             const dir = await window.nszAPI.getNszDir();
             onComplete(dir);
-        } else {
-            setError('Keys file not found. Please place prod.keys or keys.txt in the tools directory and try again.');
+        } else if (result.error) {
+            setError(result.error);
         }
     };
 
@@ -1061,10 +1064,9 @@ function SetupPage({ onComplete, needsKeys }) {
                     <div className="setup-divider" />
 
                     <div className="setup-instruction">
-                        <h3>Add Encryption Keys</h3>
+                        <h3>Import Encryption Keys</h3>
                         <p>
-                            Place your <code>prod.keys</code> (or <code>keys.txt</code>) file
-                            in the tools directory next to nsz.exe and squirrel.exe.
+                            Select your <code>prod.keys</code> or <code>keys.txt</code> file.
                             <br /><br />
                             This file contains your Switch console's encryption keys,
                             required for processing game files.
@@ -1072,18 +1074,11 @@ function SetupPage({ onComplete, needsKeys }) {
                     </div>
 
                     <button
-                        className="btn btn-secondary btn-lg setup-browse-btn"
-                        onClick={handleOpenToolsDir}
-                        style={{ marginBottom: 'var(--space-md)' }}
-                    >
-                        📂 Open Tools Directory
-                    </button>
-
-                    <button
                         className="btn btn-primary btn-lg setup-browse-btn"
-                        onClick={handleRefresh}
+                        onClick={handleImportKeys}
+                        disabled={checking}
                     >
-                        🔄 I've added my keys — Continue
+                        {checking ? '⏳ Importing...' : '🔑 Select Keys File'}
                     </button>
 
                     {error && (
