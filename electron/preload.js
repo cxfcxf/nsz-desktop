@@ -49,6 +49,41 @@ contextBridge.exposeInMainWorld('nszAPI', {
         return () => ipcRenderer.removeListener('nsz:log', handler);
     },
 
+    // Merge operations
+    mergeFiles: (files, options) => ipcRenderer.invoke('merge:start', files, options),
+    cancelMerge: () => ipcRenderer.invoke('merge:cancel'),
+    hasSquirrel: () => ipcRenderer.invoke('merge:hasSquirrel'),
+
+    onMergeProgress: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('merge:progress', handler);
+        return () => ipcRenderer.removeListener('merge:progress', handler);
+    },
+    onMergeOutput: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('merge:output', handler);
+        return () => ipcRenderer.removeListener('merge:output', handler);
+    },
+    onMergeDone: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('merge:done', handler);
+        return () => ipcRenderer.removeListener('merge:done', handler);
+    },
+    onMergeError: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('merge:error', handler);
+        return () => ipcRenderer.removeListener('merge:error', handler);
+    },
+    onMergeLog: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on('merge:log', handler);
+        return () => ipcRenderer.removeListener('merge:log', handler);
+    },
+
+    // Keys
+    hasKeys: () => ipcRenderer.invoke('setup:hasKeys'),
+    openToolsDir: () => ipcRenderer.invoke('setup:openToolsDir'),
+
     // Settings
     loadSettings: () => ipcRenderer.invoke('settings:load'),
     saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),

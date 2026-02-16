@@ -22,9 +22,9 @@ class NszRunner extends EventEmitter {
     }
 
     static validateNszDir(dirPath) {
-        // Check if the directory contains nsz.exe
-        const nszExe = path.join(dirPath, 'nsz.exe');
-        return fs.existsSync(nszExe);
+        // Check if the directory contains both nsz.exe and squirrel.exe
+        return fs.existsSync(path.join(dirPath, 'nsz.exe')) &&
+               fs.existsSync(path.join(dirPath, 'squirrel.exe'));
     }
 
     _buildArgs(operation, files, options = {}) {

@@ -3,3 +3,9 @@ dist/
 release/
 build/
 *.log
+
+# Never commit encryption keys (DMCA)
+tools/keys.txt
+tools/prod.keys
+tools/title.keys
+tools/titlekeys.txt

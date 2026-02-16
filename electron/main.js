@@ -2,9 +2,11 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const NszRunner = require('./nsz-runner');
+const MergeRunner = require('./merge-runner');
 
 let mainWindow;
 let nszRunner;
+let mergeRunner;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
 function loadSettings() {
@@ -26,6 +28,21 @@ function saveSettings(settings) {
         console.error('Failed to save settings:', e);
         return false;
     }
+}
+
+/**
+ * Resolve the tools directory.
+ * In production: <resourcesPath>/tools  (extraResources)
+ * In dev:        <project_root>/tools
+ */
+function resolveToolsDir() {
+    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+    if (isDev) {
+        // dev: project root / tools
+        return path.join(__dirname, '..', 'tools');
+    }
+    // production: resources/tools (from extraResources)
+    return path.join(process.resourcesPath, 'tools');
 }
 
 function createWindow() {
@@ -70,44 +87,62 @@ function createWindow() {
 app.whenReady().then(() => {
     const settings = loadSettings();
 
-    nszRunner = new NszRunner(settings.nszDir || null);
+    // Auto-detect bundled tools directory, fall back to user-configured path
+    const bundledToolsDir = resolveToolsDir();
+    let toolsDir = settings.nszDir || null;
 
-    // Forward nsz-runner events to renderer
-    const forwardEvent = (eventName, channel) => {
-        nszRunner.on(eventName, (data) => {
+    if (fs.existsSync(path.join(bundledToolsDir, 'nsz.exe')) &&
+        fs.existsSync(path.join(bundledToolsDir, 'squirrel.exe'))) {
+        toolsDir = bundledToolsDir;
+    }
+
+    nszRunner = new NszRunner(toolsDir);
+    mergeRunner = new MergeRunner(toolsDir);
+
+    // Forward events to renderer
+    const forwardEvent = (emitter, eventName, channel) => {
+        emitter.on(eventName, (data) => {
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send(channel, data);
             }
         });
     };
 
-    forwardEvent('progress', 'nsz:progress');
-    forwardEvent('output', 'nsz:output');
-    forwardEvent('status', 'nsz:status');
-    forwardEvent('done', 'nsz:done');
-    forwardEvent('nsz-error', 'nsz:error');
-    forwardEvent('log', 'nsz:log');
+    forwardEvent(nszRunner, 'progress', 'nsz:progress');
+    forwardEvent(nszRunner, 'output', 'nsz:output');
+    forwardEvent(nszRunner, 'status', 'nsz:status');
+    forwardEvent(nszRunner, 'done', 'nsz:done');
+    forwardEvent(nszRunner, 'nsz-error', 'nsz:error');
+    forwardEvent(nszRunner, 'log', 'nsz:log');
 
-    // ── Setup / NSZ directory ────────────────────────────────────
+    forwardEvent(mergeRunner, 'merge-progress', 'merge:progress');
+    forwardEvent(mergeRunner, 'merge-output', 'merge:output');
+    forwardEvent(mergeRunner, 'merge-status', 'merge:status');
+    forwardEvent(mergeRunner, 'merge-done', 'merge:done');
+    forwardEvent(mergeRunner, 'merge-error', 'merge:error');
+    forwardEvent(mergeRunner, 'log', 'merge:log');
+
+    // ── Setup / Tools directory ───────────────────────────────────
     ipcMain.handle('setup:getNszDir', async () => {
         return nszRunner.nszDir || null;
     });
 
     ipcMain.handle('setup:selectNszDir', async () => {
         const result = await dialog.showOpenDialog(mainWindow, {
-            title: 'Select NSZ Portable Directory',
+            title: 'Select Tools Directory',
             properties: ['openDirectory'],
-            message: 'Select the nsz_vXXX_win64_portable folder containing nsz.exe',
+            message: 'Select the directory containing nsz.exe, squirrel.exe, and prod.keys (or keys.txt)',
         });
         if (result.canceled || result.filePaths.length === 0) return { ok: false };
 
         const dirPath = result.filePaths[0];
         if (!NszRunner.validateNszDir(dirPath)) {
-            return { ok: false, error: 'nsz.exe not found in the selected directory.' };
+            return { ok: false, error: 'nsz.exe and/or squirrel.exe not found in the selected directory.' };
         }
 
         // Save and apply
         nszRunner.setNszDir(dirPath);
+        mergeRunner.setNszDir(dirPath);
         const currentSettings = loadSettings();
         currentSettings.nszDir = dirPath;
         saveSettings(currentSettings);
@@ -117,13 +152,27 @@ app.whenReady().then(() => {
 
     ipcMain.handle('setup:setNszDir', async (_event, dirPath) => {
         if (!NszRunner.validateNszDir(dirPath)) {
-            return { ok: false, error: 'nsz.exe not found in that directory.' };
+            return { ok: false, error: 'nsz.exe and/or squirrel.exe not found in that directory.' };
         }
         nszRunner.setNszDir(dirPath);
+        mergeRunner.setNszDir(dirPath);
         const currentSettings = loadSettings();
         currentSettings.nszDir = dirPath;
         saveSettings(currentSettings);
         return { ok: true, path: dirPath };
+    });
+
+    ipcMain.handle('setup:hasKeys', async () => {
+        const dir = nszRunner.nszDir;
+        if (!dir) return false;
+        return fs.existsSync(path.join(dir, 'keys.txt')) || fs.existsSync(path.join(dir, 'prod.keys'));
+    });
+
+    ipcMain.handle('setup:openToolsDir', async () => {
+        const dir = nszRunner.nszDir;
+        if (dir && fs.existsSync(dir)) {
+            shell.openPath(dir);
+        }
     });
 
     // ── NSZ operations ─────────────────────────────────────────
@@ -150,6 +199,22 @@ app.whenReady().then(() => {
     ipcMain.handle('nsz:cancel', async () => {
         nszRunner.cancel();
         return { cancelled: true };
+    });
+
+    // ── Merge operations ────────────────────────────────────────
+    ipcMain.handle('merge:start', async (_event, files, options) => {
+        mergeRunner.run(files, options);
+        return { started: true };
+    });
+
+    ipcMain.handle('merge:cancel', async () => {
+        mergeRunner.cancel();
+        return { cancelled: true };
+    });
+
+    ipcMain.handle('merge:hasSquirrel', async () => {
+        if (!mergeRunner.nszDir) return false;
+        return MergeRunner.validateSquirrel(mergeRunner.nszDir);
     });
 
     // ── Dialog handlers ─────────────────────────────────────────
@@ -193,6 +258,9 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
     if (nszRunner && nszRunner.isRunning()) {
         nszRunner.cancel();
+    }
+    if (mergeRunner && mergeRunner.isRunning()) {
+        mergeRunner.cancel();
     }
     if (process.platform !== 'darwin') app.quit();
 });

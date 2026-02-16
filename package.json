@@ -54,7 +54,14 @@
       "allowToChangeInstallationDirectory": true,
       "artifactName": "NSZ-Desktop-Setup.exe"
     },
-    "asar": true
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools",
+        "filter": ["**/*"]
+      }
+    ]
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.1.4",

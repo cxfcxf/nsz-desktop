@@ -8,6 +8,7 @@ function Sidebar({ activePage, onNavigate }) {
     const pages = [
         { id: 'compress', icon: '📦', label: 'Compress' },
         { id: 'decompress', icon: '📂', label: 'Decompress' },
+        { id: 'merge', icon: '🔗', label: 'Merge' },
         { id: 'info', icon: 'ℹ️', label: 'File Info' },
         { id: 'settings', icon: '⚙️', label: 'Settings' },
     ];
@@ -595,6 +596,183 @@ function InfoPage() {
     );
 }
 
+function MergePage() {
+    const [files, setFiles] = useState([]);
+    const [running, setRunning] = useState(false);
+    const [progress, setProgress] = useState({ percent: 0, message: '' });
+    const [outputLines, setOutputLines] = useState([]);
+    const [outputDir, setOutputDir] = useState('');
+    const [format, setFormat] = useState('xci');
+    const [hasSquirrel, setHasSquirrel] = useState(null);
+
+    useEffect(() => {
+        if (window.nszAPI) {
+            window.nszAPI.hasSquirrel().then(setHasSquirrel);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!window.nszAPI) return;
+        const unsubs = [
+            window.nszAPI.onMergeProgress((data) => setProgress(data)),
+            window.nszAPI.onMergeOutput((line) => setOutputLines(prev => [...prev.slice(-200), line])),
+            window.nszAPI.onMergeDone((data) => {
+                setRunning(false);
+                setProgress({
+                    percent: 100,
+                    message: data.code === 0 ? 'Merge completed successfully!' : `Completed with exit code: ${data.code}`,
+                });
+            }),
+            window.nszAPI.onMergeError((msg) => setOutputLines(prev => [...prev, `ERROR: ${msg}`])),
+        ];
+        return () => unsubs.forEach(fn => fn());
+    }, []);
+
+    const handleAddFiles = (newFiles) => {
+        setFiles(prev => [...prev, ...newFiles.filter(f => !prev.includes(f))]);
+    };
+
+    const handleRemoveFile = (index) => {
+        setFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleStart = async () => {
+        if (files.length < 2 || !window.nszAPI) return;
+        setRunning(true);
+        setProgress({ percent: 0, message: 'Starting merge...' });
+        setOutputLines([]);
+        await window.nszAPI.mergeFiles(files, {
+            output: outputDir || undefined,
+            format,
+        });
+    };
+
+    const handleCancel = async () => {
+        if (window.nszAPI) await window.nszAPI.cancelMerge();
+        setRunning(false);
+        setProgress({ percent: 0, message: 'Cancelled' });
+    };
+
+    const handleSelectOutputDir = async () => {
+        if (!window.nszAPI) return;
+        const dir = await window.nszAPI.selectOutputDir();
+        if (dir) setOutputDir(dir);
+    };
+
+    if (hasSquirrel === false) {
+        return (
+            <div>
+                <div className="page-header">
+                    <h2>Merge</h2>
+                    <p>Combine base game + updates + DLCs into a single file</p>
+                </div>
+                <div className="card">
+                    <div className="card-header">
+                        <span className="card-title">Setup Required</span>
+                    </div>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', lineHeight: 1.7 }}>
+                        Merge requires <code style={{
+                            background: 'rgba(0, 212, 170, 0.1)',
+                            color: 'var(--accent-primary)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontFamily: "'Consolas', 'Courier New', monospace",
+                            fontSize: 'var(--font-size-xs)',
+                        }}>squirrel.exe</code> to be placed in the same directory as nsz.exe.
+                        <br /><br />
+                        Build it from the <a
+                            href="https://github.com/cxfcxf/NSC_BUILDER/tree/fixes"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'var(--accent-primary)' }}
+                        >NSC_Builder fixes branch</a> using PyInstaller, then copy squirrel.exe next to nsz.exe.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <div className="page-header">
+                <h2>Merge</h2>
+                <p>Combine base game (XCI/NSP) + updates + DLCs into a single XCI or NSP</p>
+            </div>
+
+            <DropZone
+                onFiles={handleAddFiles}
+                accept={['xci', 'nsp']}
+                hint="Drop base game, update, and DLC files (XCI, NSP only)"
+            />
+
+            <FileList files={files} onRemove={handleRemoveFile} />
+
+            {files.length > 0 && (
+                <>
+                    <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
+                        <div className="card-header">
+                            <span className="card-title">Merge Options</span>
+                        </div>
+                        <div className="options-panel">
+                            <div className="option-group">
+                                <label className="option-label">Output Format</label>
+                                <select value={format} onChange={(e) => setFormat(e.target.value)}>
+                                    <option value="xci">XCI (Game Cartridge)</option>
+                                    <option value="nsp">NSP (eShop Package)</option>
+                                </select>
+                                <span className="option-description">
+                                    {format === 'xci' ? 'Single XCI with all content — load directly in emulator' : 'Single NSP with all content'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="dir-picker">
+                        <input
+                            type="text"
+                            value={outputDir}
+                            onChange={(e) => setOutputDir(e.target.value)}
+                            placeholder="Output directory (default: same as first file)"
+                        />
+                        <button className="btn btn-secondary btn-sm" onClick={handleSelectOutputDir}>
+                            Browse
+                        </button>
+                    </div>
+
+                    {(running || outputLines.length > 0) && (
+                        <ProgressDisplay progress={progress} outputLines={outputLines} />
+                    )}
+
+                    <div className="actions-bar">
+                        <span className="spacer" />
+                        {running ? (
+                            <button className="btn btn-danger" onClick={handleCancel}>
+                                ✕ Cancel
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress({ percent: 0, message: '' }); }}
+                                >
+                                    Clear All
+                                </button>
+                                <button
+                                    className="btn btn-primary btn-lg"
+                                    onClick={handleStart}
+                                    disabled={files.length < 2}
+                                >
+                                    🔗 Start Merge
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
 function SettingsPage() {
     const [settings, setSettings] = useState({
         defaultLevel: 18,
@@ -837,7 +1015,7 @@ function SettingsPage() {
 // Setup Page (first launch)
 // ============================================================
 
-function SetupPage({ onComplete }) {
+function SetupPage({ onComplete, needsKeys }) {
     const [error, setError] = useState('');
     const [checking, setChecking] = useState(false);
 
@@ -854,25 +1032,91 @@ function SetupPage({ onComplete }) {
         }
     };
 
+    const handleOpenToolsDir = async () => {
+        if (window.nszAPI) await window.nszAPI.openToolsDir();
+    };
+
+    const handleRefresh = async () => {
+        if (!window.nszAPI) return;
+        const has = await window.nszAPI.hasKeys();
+        if (has) {
+            const dir = await window.nszAPI.getNszDir();
+            onComplete(dir);
+        } else {
+            setError('Keys file not found. Please place prod.keys or keys.txt in the tools directory and try again.');
+        }
+    };
+
+    // Tools are bundled but keys.txt is missing
+    if (needsKeys) {
+        return (
+            <div className="setup-screen">
+                <div className="setup-card">
+                    <div className="setup-icon">🔑</div>
+                    <h1 className="setup-title">NSZ Desktop</h1>
+                    <p className="setup-subtitle">
+                        Almost ready — just need your encryption keys
+                    </p>
+
+                    <div className="setup-divider" />
+
+                    <div className="setup-instruction">
+                        <h3>Add Encryption Keys</h3>
+                        <p>
+                            Place your <code>prod.keys</code> (or <code>keys.txt</code>) file
+                            in the tools directory next to nsz.exe and squirrel.exe.
+                            <br /><br />
+                            This file contains your Switch console's encryption keys,
+                            required for processing game files.
+                        </p>
+                    </div>
+
+                    <button
+                        className="btn btn-secondary btn-lg setup-browse-btn"
+                        onClick={handleOpenToolsDir}
+                        style={{ marginBottom: 'var(--space-md)' }}
+                    >
+                        📂 Open Tools Directory
+                    </button>
+
+                    <button
+                        className="btn btn-primary btn-lg setup-browse-btn"
+                        onClick={handleRefresh}
+                    >
+                        🔄 I've added my keys — Continue
+                    </button>
+
+                    {error && (
+                        <div className="setup-error">
+                            ❌ {error}
+                        </div>
+                    )}
+
+                    <div className="setup-footer">
+                        NSZ Desktop v1.0.0
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // No tools found at all — browse for directory
     return (
         <div className="setup-screen">
             <div className="setup-card">
                 <div className="setup-icon">🎮</div>
                 <h1 className="setup-title">NSZ Desktop</h1>
                 <p className="setup-subtitle">
-                    Modern GUI for NSZ compression & decompression
+                    Modern GUI for NSZ compression, decompression & merging
                 </p>
 
                 <div className="setup-divider" />
 
                 <div className="setup-instruction">
-                    <h3>Locate NSZ Tool</h3>
+                    <h3>Locate Tools Directory</h3>
                     <p>
-                        Select the <code>nsz_vXXX_win64_portable</code> directory
-                        downloaded from the{' '}
-                        <a href="https://github.com/nicoboss/nsz/releases" target="_blank" rel="noopener noreferrer" className="setup-link">NSZ GitHub releases</a>.
-                        <br />
-                        It should contain <code>nsz.exe</code>.
+                        Select the directory containing <code>nsz.exe</code>, <code>squirrel.exe</code>,
+                        and <code>prod.keys</code> (or <code>keys.txt</code>).
                     </p>
                 </div>
 
@@ -881,7 +1125,7 @@ function SetupPage({ onComplete }) {
                     onClick={handleBrowse}
                     disabled={checking}
                 >
-                    {checking ? '⏳ Checking...' : '📂 Browse for NSZ Directory'}
+                    {checking ? '⏳ Checking...' : '📂 Browse for Tools Directory'}
                 </button>
 
                 {error && (
@@ -891,7 +1135,7 @@ function SetupPage({ onComplete }) {
                 )}
 
                 <div className="setup-footer">
-                    NSZ Desktop v1.0.0 — Standalone GUI for nsz.exe
+                    NSZ Desktop v1.0.0
                 </div>
             </div>
         </div>
@@ -906,16 +1150,21 @@ export default function App() {
     const [activePage, setActivePage] = useState('compress');
     const [toasts, setToasts] = useState([]);
     const [nszDir, setNszDir] = useState(null);
+    const [hasKeys, setHasKeys] = useState(false);
     const [loading, setLoading] = useState(true);
 
-    // Check if nsz directory is configured on mount
+    // Check if nsz directory and keys are configured on mount
     useEffect(() => {
         if (!window.nszAPI) {
             setLoading(false);
             return;
         }
-        window.nszAPI.getNszDir().then((dir) => {
+        Promise.all([
+            window.nszAPI.getNszDir(),
+            window.nszAPI.hasKeys(),
+        ]).then(([dir, keys]) => {
             setNszDir(dir);
+            setHasKeys(keys);
             setLoading(false);
         });
     }, []);
@@ -939,7 +1188,8 @@ export default function App() {
 
     const handleSetupComplete = (dirPath) => {
         setNszDir(dirPath);
-        addToast('NSZ directory configured successfully!', 'success');
+        setHasKeys(true);
+        addToast('Ready to go!', 'success');
     };
 
     // Loading state
@@ -954,11 +1204,14 @@ export default function App() {
         );
     }
 
-    // Setup screen if no nsz directory configured
-    if (!nszDir) {
+    // Setup screen if no tools or no keys
+    if (!nszDir || !hasKeys) {
         return (
             <>
-                <SetupPage onComplete={handleSetupComplete} />
+                <SetupPage
+                    onComplete={handleSetupComplete}
+                    needsKeys={!!nszDir && !hasKeys}
+                />
                 <ToastContainer toasts={toasts} />
             </>
         );
@@ -974,6 +1227,9 @@ export default function App() {
                 </div>
                 <div style={{ display: activePage === 'decompress' ? 'block' : 'none' }}>
                     <DecompressPage />
+                </div>
+                <div style={{ display: activePage === 'merge' ? 'block' : 'none' }}>
+                    <MergePage />
                 </div>
                 <div style={{ display: activePage === 'info' ? 'block' : 'none' }}>
                     <InfoPage />
