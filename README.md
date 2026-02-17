@@ -1,18 +1,19 @@
 # NSZ Desktop
 
-Modern desktop GUI for Nintendo Switch game file operations — compress, decompress, and merge game files (NSP, XCI, NSZ, XCZ, NCZ).
+Modern desktop GUI for Nintendo Switch game file operations — compress, decompress, merge, convert, split, and trim game files (NSP, XCI, NSZ, XCZ, NCZ).
 
-Built with Electron + React + Vite.
+Built with Electron + React + Vite. Powered by [nscb_rust](https://github.com/cxfcxf/nscb_rust).
 
 ## Features
 
-- **Compress** NSP/XCI to NSZ/XCZ format
+- **Compress** NSP/XCI to NSZ/XCZ format (configurable zstd level 1-22)
 - **Decompress** NSZ/XCZ/NCZ back to NSP/XCI
-- **Merge** base game (XCI/NSP) + updates + DLCs into a single XCI or NSP
-- **File Info** viewer for any Switch game file
+- **Merge** base game + updates + DLCs into a single XCI or NSP
+- **Convert** between NSP and XCI formats
+- **Split** multi-title files into separate files by title ID (CNMT-aware naming)
+- **XCI Trim** — trim, super-trim, or untrim XCI cartridge files
 - Drag & drop file support
 - Real-time progress bar and output console
-- Configurable compression options (level, threads, block mode, etc.)
 - Settings persistence across sessions
 
 ## Prerequisites
@@ -32,41 +33,13 @@ Grab the latest release from the [Releases](https://github.com/cxfcxf/nsz-deskto
 
 1. Run the app
 2. On first launch, the setup wizard will prompt you to select your `prod.keys` file
-3. Use the sidebar to navigate between Compress, Decompress, Merge, File Info, and Settings
+3. Use the sidebar to navigate between Compress, Decompress, Merge, Convert, Split, XCI Trim, and Settings
 
-## Building the Tool Executables
+## Backend
 
-The `tools/` directory contains pre-built `nsz.exe` and `squirrel.exe`. If you need to rebuild them from source:
+The `tools/` directory contains `nscb_rust.exe`, a single Rust-native binary that handles all operations. Built from [cxfcxf/nscb_rust](https://github.com/cxfcxf/nscb_rust).
 
-### nsz.exe
-
-Built from [cxfcxf/nsz](https://github.com/cxfcxf/nsz) (branch: `fixes`).
-
-```bash
-git clone -b fixes git@github.com:cxfcxf/nsz.git
-cd nsz
-python -m venv venv
-venv\Scripts\activate
-pip install pycryptodome zstandard enlighten pyinstaller
-pyinstaller --onefile --name nsz --paths nsz --hidden-import nsz --hidden-import nsz.Fs --hidden-import nsz.nut --hidden-import nsz.gui nsz.py
-# Output: dist/nsz.exe
-```
-
-### squirrel.exe
-
-Built from [cxfcxf/NSC_BUILDER](https://github.com/cxfcxf/NSC_BUILDER) (branch: `fixes`).
-
-```bash
-git clone -b fixes git@github.com:cxfcxf/NSC_BUILDER.git
-cd NSC_BUILDER/py/ztools
-python -m venv venv
-venv\Scripts\activate
-pip install wheel urllib3 unidecode tqdm beautifulsoup4 requests pycryptodome zstandard colorama Pillow chardet pykakasi googletrans legacy-cgi pywin32 pyinstaller
-pyinstaller --onefile --name squirrel --paths lib --paths . --add-data "lib;lib" --add-data "Fs;Fs" --add-data "nutFs;nutFs" squirrel.py
-# Output: dist/squirrel.exe
-```
-
-Copy both executables into the `tools/` directory of this project.
+To update the backend, download the latest release from [nscb_rust releases](https://github.com/cxfcxf/nscb_rust/releases) and replace `tools/nscb_rust.exe`.
 
 ## Development
 

@@ -13,6 +13,91 @@ function levelLabel(level) {
 
 const EMPTY_PROGRESS = { percent: 0, message: '' };
 
+/**
+ * Hook that subscribes to the unified runner events, filtering by operation name(s).
+ * Accepts a single operation string or an array of operation strings.
+ */
+function useRunnerEvents(operationNames) {
+    const ops = Array.isArray(operationNames) ? operationNames : [operationNames];
+    const opsKey = ops.join(',');
+
+    const [running, setRunning] = useState(false);
+    const [progress, setProgress] = useState(EMPTY_PROGRESS);
+    const [outputLines, setOutputLines] = useState([]);
+
+    useEffect(() => {
+        if (!window.nszAPI) return;
+
+        function matchesOp(data) {
+            return ops.includes(data.op);
+        }
+
+        const unsubs = [
+            window.nszAPI.onProgress((data) => {
+                if (matchesOp(data)) {
+                    setProgress({ percent: data.percent, message: data.message });
+                }
+            }),
+            window.nszAPI.onOutput((data) => {
+                if (matchesOp(data)) {
+                    setOutputLines(prev => [...prev.slice(-200), data.line]);
+                }
+            }),
+            window.nszAPI.onDone((data) => {
+                if (matchesOp(data)) {
+                    setRunning(false);
+                    setProgress({
+                        percent: 100,
+                        message: data.code === 0 ? 'Completed successfully!' : `Completed with exit code: ${data.code}`,
+                    });
+                }
+            }),
+            window.nszAPI.onError((data) => {
+                if (matchesOp(data)) {
+                    setOutputLines(prev => [...prev, `ERROR: ${data.message}`]);
+                }
+            }),
+        ];
+        return () => unsubs.forEach(fn => fn());
+    }, [opsKey]);
+
+    return { running, progress, outputLines, setRunning, setProgress, setOutputLines };
+}
+
+/**
+ * Hook for managing a file list with add (deduplicated) and remove operations.
+ */
+function useFileList() {
+    const [files, setFiles] = useState([]);
+
+    const addFiles = useCallback((newFiles) => {
+        setFiles(prev => [...prev, ...newFiles.filter(f => !prev.includes(f))]);
+    }, []);
+
+    const removeFile = useCallback((index) => {
+        setFiles(prev => prev.filter((_, i) => i !== index));
+    }, []);
+
+    const clearFiles = useCallback(() => setFiles([]), []);
+
+    return { files, addFiles, removeFile, clearFiles };
+}
+
+/**
+ * Hook for selecting an output directory via the native dialog.
+ */
+function useOutputDir() {
+    const [outputDir, setOutputDir] = useState('');
+
+    const selectOutputDir = useCallback(async () => {
+        if (!window.nszAPI) return;
+        const dir = await window.nszAPI.selectOutputDir();
+        if (dir) setOutputDir(dir);
+    }, []);
+
+    return { outputDir, setOutputDir, selectOutputDir };
+}
+
 // ============================================================
 // Shared Components
 // ============================================================
@@ -22,7 +107,9 @@ function Sidebar({ activePage, onNavigate }) {
         { id: 'compress', icon: '📦', label: 'Compress' },
         { id: 'decompress', icon: '📂', label: 'Decompress' },
         { id: 'merge', icon: '🔗', label: 'Merge' },
-        { id: 'info', icon: 'ℹ️', label: 'File Info' },
+        { id: 'convert', icon: '🔄', label: 'Convert' },
+        { id: 'split', icon: '✂️', label: 'Split' },
+        { id: 'xci-trim', icon: '📐', label: 'XCI Trim' },
         { id: 'settings', icon: '⚙️', label: 'Settings' },
     ];
 
@@ -45,7 +132,7 @@ function Sidebar({ activePage, onNavigate }) {
                 ))}
             </nav>
             <div className="sidebar-footer">
-                NSZ v4.6.1 Backend
+                nscb_rust v0.1.0 Backend
             </div>
         </div>
     );
@@ -207,64 +294,67 @@ function ToastContainer({ toasts }) {
     );
 }
 
+function OutputDirPicker({ outputDir, setOutputDir, selectOutputDir }) {
+    return (
+        <div className="dir-picker">
+            <input
+                type="text"
+                value={outputDir}
+                onChange={(e) => setOutputDir(e.target.value)}
+                placeholder="Output directory (default: same as source)"
+            />
+            <button className="btn btn-secondary btn-sm" onClick={selectOutputDir}>
+                Browse
+            </button>
+        </div>
+    );
+}
+
+function ActionBar({ running, onCancel, onClear, onStart, startIcon, startLabel, startDisabled }) {
+    return (
+        <div className="actions-bar">
+            <span className="spacer" />
+            {running ? (
+                <button className="btn btn-danger" onClick={onCancel}>
+                    ✕ Cancel
+                </button>
+            ) : (
+                <>
+                    <button className="btn btn-secondary" onClick={onClear}>
+                        Clear All
+                    </button>
+                    <button
+                        className="btn btn-primary btn-lg"
+                        onClick={onStart}
+                        disabled={startDisabled}
+                    >
+                        {startIcon} {startLabel}
+                    </button>
+                </>
+            )}
+        </div>
+    );
+}
+
 // ============================================================
 // Pages
 // ============================================================
 
 function CompressPage() {
-    const [files, setFiles] = useState([]);
-    const [running, setRunning] = useState(false);
-    const [progress, setProgress] = useState(EMPTY_PROGRESS);
-    const [outputLines, setOutputLines] = useState([]);
-    const [outputDir, setOutputDir] = useState('');
+    const { files, addFiles, removeFile, clearFiles } = useFileList();
+    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('compress');
+    const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
     const [level, setLevel] = useState(18);
-    const [block, setBlock] = useState(false);
-    const [solid, setSolid] = useState(false);
-    const [longMode, setLongMode] = useState(false);
-    const [verify, setVerify] = useState(false);
-    const [keep, setKeep] = useState(false);
-    const [threads, setThreads] = useState(-1);
-    const [overwrite, setOverwrite] = useState(false);
-
-    useEffect(() => {
-        if (!window.nszAPI) return;
-        const unsubs = [
-            window.nszAPI.onProgress(setProgress),
-            window.nszAPI.onOutput((line) => setOutputLines(prev => [...prev.slice(-200), line])),
-            window.nszAPI.onDone((data) => {
-                setRunning(false);
-                setProgress({ percent: 100, message: `Completed (exit code: ${data.code})` });
-            }),
-            window.nszAPI.onError((msg) => setOutputLines(prev => [...prev, `ERROR: ${msg}`])),
-        ];
-        return () => unsubs.forEach(fn => fn());
-    }, []);
-
-    const handleAddFiles = (newFiles) => {
-        setFiles(prev => [...prev, ...newFiles.filter(f => !prev.includes(f))]);
-    };
-
-    const handleRemoveFile = (index) => {
-        setFiles(prev => prev.filter((_, i) => i !== index));
-    };
 
     const handleStart = async () => {
         if (files.length === 0 || !window.nszAPI) return;
         setRunning(true);
         setProgress({ ...EMPTY_PROGRESS, message: 'Starting compression...' });
         setOutputLines([]);
-
-        const opts = { level };
-        if (block) opts.block = true;
-        if (solid) opts.solid = true;
-        if (longMode) opts.long = true;
-        if (verify) opts.verify = true;
-        if (keep) opts.keep = true;
-        if (threads !== -1) opts.threads = threads;
-        if (overwrite) opts.overwrite = true;
-        if (outputDir) opts.output = outputDir;
-
-        await window.nszAPI.compress(files, opts);
+        await window.nszAPI.compress(files, {
+            level,
+            output: outputDir || undefined,
+        });
     };
 
     const handleCancel = async () => {
@@ -273,11 +363,7 @@ function CompressPage() {
         setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
     };
 
-    const handleSelectOutputDir = async () => {
-        if (!window.nszAPI) return;
-        const dir = await window.nszAPI.selectOutputDir();
-        if (dir) setOutputDir(dir);
-    };
+    const handleClear = () => { clearFiles(); setOutputLines([]); setProgress(EMPTY_PROGRESS); };
 
     return (
         <div>
@@ -287,12 +373,12 @@ function CompressPage() {
             </div>
 
             <DropZone
-                onFiles={handleAddFiles}
+                onFiles={addFiles}
                 accept={['nsp', 'xci']}
                 hint="Drop NSP or XCI files to compress"
             />
 
-            <FileList files={files} onRemove={handleRemoveFile} />
+            <FileList files={files} onRemove={removeFile} />
 
             {files.length > 0 && (
                 <>
@@ -317,87 +403,23 @@ function CompressPage() {
                                     {levelLabel(level)}
                                 </span>
                             </div>
-
-                            <div className="option-group">
-                                <label className="option-label">Threads</label>
-                                <input
-                                    type="number"
-                                    value={threads}
-                                    onChange={(e) => setThreads(Number(e.target.value))}
-                                    min="-1"
-                                    placeholder="-1 = auto"
-                                />
-                                <span className="option-description">-1 = auto detect CPU cores</span>
-                            </div>
-
-                            <div className="option-group">
-                                <Toggle checked={block} onChange={setBlock} label="Block Compression" />
-                                <span className="option-description">Multi-threaded with random access</span>
-                            </div>
-
-                            <div className="option-group">
-                                <Toggle checked={solid} onChange={setSolid} label="Solid Compression" />
-                                <span className="option-description">Higher ratio, no random access</span>
-                            </div>
-
-                            <div className="option-group">
-                                <Toggle checked={longMode} onChange={setLongMode} label="Long Distance Mode" />
-                                <span className="option-description">Better compression (slower)</span>
-                            </div>
-
-                            <div className="option-group">
-                                <Toggle checked={verify} onChange={setVerify} label="Verify After" />
-                                <span className="option-description">Hash check after compression</span>
-                            </div>
-
-                            <div className="option-group">
-                                <Toggle checked={keep} onChange={setKeep} label="Keep All Partitions" />
-                                <span className="option-description">Allow bit-identical recreation</span>
-                            </div>
-
-                            <div className="option-group">
-                                <Toggle checked={overwrite} onChange={setOverwrite} label="Overwrite Existing" />
-                                <span className="option-description">Overwrite files with same name</span>
-                            </div>
                         </div>
                     </div>
 
-                    <div className="dir-picker">
-                        <input
-                            type="text"
-                            value={outputDir}
-                            onChange={(e) => setOutputDir(e.target.value)}
-                            placeholder="Output directory (default: same as source)"
-                        />
-                        <button className="btn btn-secondary btn-sm" onClick={handleSelectOutputDir}>
-                            Browse
-                        </button>
-                    </div>
+                    <OutputDirPicker outputDir={outputDir} setOutputDir={setOutputDir} selectOutputDir={selectOutputDir} />
 
                     {(running || outputLines.length > 0) && (
                         <ProgressDisplay progress={progress} outputLines={outputLines} />
                     )}
 
-                    <div className="actions-bar">
-                        <span className="spacer" />
-                        {running ? (
-                            <button className="btn btn-danger" onClick={handleCancel}>
-                                ✕ Cancel
-                            </button>
-                        ) : (
-                            <>
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress(EMPTY_PROGRESS); }}
-                                >
-                                    Clear All
-                                </button>
-                                <button className="btn btn-primary btn-lg" onClick={handleStart}>
-                                    🚀 Start Compression
-                                </button>
-                            </>
-                        )}
-                    </div>
+                    <ActionBar
+                        running={running}
+                        onCancel={handleCancel}
+                        onClear={handleClear}
+                        onStart={handleStart}
+                        startIcon="📦"
+                        startLabel="Start Compression"
+                    />
                 </>
             )}
         </div>
@@ -405,32 +427,9 @@ function CompressPage() {
 }
 
 function DecompressPage() {
-    const [files, setFiles] = useState([]);
-    const [running, setRunning] = useState(false);
-    const [progress, setProgress] = useState(EMPTY_PROGRESS);
-    const [outputLines, setOutputLines] = useState([]);
-    const [outputDir, setOutputDir] = useState('');
-    const [verify, setVerify] = useState(false);
-    const [threads, setThreads] = useState(-1);
-    const [overwrite, setOverwrite] = useState(false);
-
-    useEffect(() => {
-        if (!window.nszAPI) return;
-        const unsubs = [
-            window.nszAPI.onProgress(setProgress),
-            window.nszAPI.onOutput((line) => setOutputLines(prev => [...prev.slice(-200), line])),
-            window.nszAPI.onDone((data) => {
-                setRunning(false);
-                setProgress({ percent: 100, message: `Completed (exit code: ${data.code})` });
-            }),
-            window.nszAPI.onError((msg) => setOutputLines(prev => [...prev, `ERROR: ${msg}`])),
-        ];
-        return () => unsubs.forEach(fn => fn());
-    }, []);
-
-    const handleAddFiles = (newFiles) => {
-        setFiles(prev => [...prev, ...newFiles.filter(f => !prev.includes(f))]);
-    };
+    const { files, addFiles, removeFile, clearFiles } = useFileList();
+    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('decompress');
+    const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
 
     const handleStart = async () => {
         if (files.length === 0 || !window.nszAPI) return;
@@ -438,9 +437,6 @@ function DecompressPage() {
         setProgress({ ...EMPTY_PROGRESS, message: 'Starting decompression...' });
         setOutputLines([]);
         await window.nszAPI.decompress(files, {
-            verify: verify || undefined,
-            threads: threads !== -1 ? threads : undefined,
-            overwrite: overwrite || undefined,
             output: outputDir || undefined,
         });
     };
@@ -450,11 +446,7 @@ function DecompressPage() {
         setRunning(false);
     };
 
-    const handleSelectOutputDir = async () => {
-        if (!window.nszAPI) return;
-        const dir = await window.nszAPI.selectOutputDir();
-        if (dir) setOutputDir(dir);
-    };
+    const handleClear = () => { clearFiles(); setOutputLines([]); setProgress(EMPTY_PROGRESS); };
 
     return (
         <div>
@@ -464,181 +456,41 @@ function DecompressPage() {
             </div>
 
             <DropZone
-                onFiles={handleAddFiles}
+                onFiles={addFiles}
                 accept={['nsz', 'xcz', 'ncz']}
                 hint="Drop NSZ, XCZ, or NCZ files to decompress"
             />
 
-            <FileList files={files} onRemove={(i) => setFiles(prev => prev.filter((_, idx) => idx !== i))} />
+            <FileList files={files} onRemove={removeFile} />
 
             {files.length > 0 && (
                 <>
-                    <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
-                        <div className="card-header">
-                            <span className="card-title">Decompression Options</span>
-                        </div>
-                        <div className="options-panel">
-                            <div className="option-group">
-                                <label className="option-label">Threads</label>
-                                <input
-                                    type="number"
-                                    value={threads}
-                                    onChange={(e) => setThreads(Number(e.target.value))}
-                                    min="-1"
-                                    placeholder="-1 = auto"
-                                />
-                            </div>
-                            <div className="option-group">
-                                <Toggle checked={verify} onChange={setVerify} label="Verify After" />
-                            </div>
-                            <div className="option-group">
-                                <Toggle checked={overwrite} onChange={setOverwrite} label="Overwrite Existing" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="dir-picker">
-                        <input
-                            type="text"
-                            value={outputDir}
-                            onChange={(e) => setOutputDir(e.target.value)}
-                            placeholder="Output directory (default: same as source)"
-                        />
-                        <button className="btn btn-secondary btn-sm" onClick={handleSelectOutputDir}>
-                            Browse
-                        </button>
-                    </div>
+                    <OutputDirPicker outputDir={outputDir} setOutputDir={setOutputDir} selectOutputDir={selectOutputDir} />
 
                     {(running || outputLines.length > 0) && (
                         <ProgressDisplay progress={progress} outputLines={outputLines} />
                     )}
 
-                    <div className="actions-bar">
-                        <span className="spacer" />
-                        {running ? (
-                            <button className="btn btn-danger" onClick={handleCancel}>✕ Cancel</button>
-                        ) : (
-                            <>
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress(EMPTY_PROGRESS); }}
-                                >
-                                    Clear All
-                                </button>
-                                <button className="btn btn-primary btn-lg" onClick={handleStart}>
-                                    📂 Start Decompression
-                                </button>
-                            </>
-                        )}
-                    </div>
+                    <ActionBar
+                        running={running}
+                        onCancel={handleCancel}
+                        onClear={handleClear}
+                        onStart={handleStart}
+                        startIcon="📂"
+                        startLabel="Start Decompression"
+                    />
                 </>
             )}
         </div>
     );
 }
 
-function InfoPage() {
-    const [files, setFiles] = useState([]);
-    const [infoText, setInfoText] = useState('');
-    const [running, setRunning] = useState(false);
-
-    useEffect(() => {
-        if (!window.nszAPI) return;
-        const unsubs = [
-            window.nszAPI.onOutput((line) => {
-                setInfoText(prev => prev + line + '\n');
-            }),
-            window.nszAPI.onDone(() => setRunning(false)),
-            window.nszAPI.onError((msg) => setInfoText(prev => prev + `ERROR: ${msg}\n`)),
-        ];
-        return () => unsubs.forEach(fn => fn());
-    }, []);
-
-    const handleAddFiles = (newFiles) => {
-        setFiles(newFiles);
-        setInfoText('');
-    };
-
-    const handleGetInfo = async () => {
-        if (files.length === 0 || !window.nszAPI) return;
-        setRunning(true);
-        setInfoText('');
-        await window.nszAPI.getInfo(files);
-    };
-
-    return (
-        <div>
-            <div className="page-header">
-                <h2>File Info</h2>
-                <p>View detailed information about Switch game files</p>
-            </div>
-
-            <DropZone
-                onFiles={handleAddFiles}
-                hint="Drop any Switch file to view its info"
-            />
-
-            <FileList files={files} onRemove={(i) => setFiles(prev => prev.filter((_, idx) => idx !== i))} />
-
-            {files.length > 0 && (
-                <div className="actions-bar">
-                    <span className="spacer" />
-                    <button
-                        className="btn btn-primary"
-                        onClick={handleGetInfo}
-                        disabled={running}
-                    >
-                        {running ? '⏳ Loading...' : 'ℹ️ Get Info'}
-                    </button>
-                </div>
-            )}
-
-            {infoText && (
-                <div className="info-display">{infoText}</div>
-            )}
-        </div>
-    );
-}
-
 function MergePage() {
-    const [files, setFiles] = useState([]);
-    const [running, setRunning] = useState(false);
-    const [progress, setProgress] = useState(EMPTY_PROGRESS);
-    const [outputLines, setOutputLines] = useState([]);
-    const [outputDir, setOutputDir] = useState('');
+    const { files, addFiles, removeFile, clearFiles } = useFileList();
+    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('merge');
+    const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
     const [format, setFormat] = useState('xci');
-    const [hasSquirrel, setHasSquirrel] = useState(null);
-
-    useEffect(() => {
-        if (window.nszAPI) {
-            window.nszAPI.hasSquirrel().then(setHasSquirrel);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (!window.nszAPI) return;
-        const unsubs = [
-            window.nszAPI.onMergeProgress(setProgress),
-            window.nszAPI.onMergeOutput((line) => setOutputLines(prev => [...prev.slice(-200), line])),
-            window.nszAPI.onMergeDone((data) => {
-                setRunning(false);
-                setProgress({
-                    percent: 100,
-                    message: data.code === 0 ? 'Merge completed successfully!' : `Completed with exit code: ${data.code}`,
-                });
-            }),
-            window.nszAPI.onMergeError((msg) => setOutputLines(prev => [...prev, `ERROR: ${msg}`])),
-        ];
-        return () => unsubs.forEach(fn => fn());
-    }, []);
-
-    const handleAddFiles = (newFiles) => {
-        setFiles(prev => [...prev, ...newFiles.filter(f => !prev.includes(f))]);
-    };
-
-    const handleRemoveFile = (index) => {
-        setFiles(prev => prev.filter((_, i) => i !== index));
-    };
+    const [nodelta, setNodelta] = useState(false);
 
     const handleStart = async () => {
         if (files.length < 2 || !window.nszAPI) return;
@@ -648,53 +500,17 @@ function MergePage() {
         await window.nszAPI.mergeFiles(files, {
             output: outputDir || undefined,
             format,
+            nodelta: nodelta || undefined,
         });
     };
 
     const handleCancel = async () => {
-        if (window.nszAPI) await window.nszAPI.cancelMerge();
+        if (window.nszAPI) await window.nszAPI.cancel();
         setRunning(false);
         setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
     };
 
-    const handleSelectOutputDir = async () => {
-        if (!window.nszAPI) return;
-        const dir = await window.nszAPI.selectOutputDir();
-        if (dir) setOutputDir(dir);
-    };
-
-    if (hasSquirrel === false) {
-        return (
-            <div>
-                <div className="page-header">
-                    <h2>Merge</h2>
-                    <p>Combine base game + updates + DLCs into a single file</p>
-                </div>
-                <div className="card">
-                    <div className="card-header">
-                        <span className="card-title">Setup Required</span>
-                    </div>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', lineHeight: 1.7 }}>
-                        Merge requires <code style={{
-                            background: 'rgba(0, 212, 170, 0.1)',
-                            color: 'var(--accent-primary)',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontFamily: "'Consolas', 'Courier New', monospace",
-                            fontSize: 'var(--font-size-xs)',
-                        }}>squirrel.exe</code> to be placed in the same directory as nsz.exe.
-                        <br /><br />
-                        Build it from the <a
-                            href="https://github.com/cxfcxf/NSC_BUILDER/tree/fixes"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'var(--accent-primary)' }}
-                        >NSC_Builder fixes branch</a> using PyInstaller, then copy squirrel.exe next to nsz.exe.
-                    </p>
-                </div>
-            </div>
-        );
-    }
+    const handleClear = () => { clearFiles(); setOutputLines([]); setProgress(EMPTY_PROGRESS); };
 
     return (
         <div>
@@ -704,12 +520,12 @@ function MergePage() {
             </div>
 
             <DropZone
-                onFiles={handleAddFiles}
-                accept={['xci', 'nsp']}
-                hint="Drop base game, update, and DLC files (XCI, NSP only)"
+                onFiles={addFiles}
+                accept={['xci', 'nsp', 'nsz', 'xcz']}
+                hint="Drop base game, update, and DLC files"
             />
 
-            <FileList files={files} onRemove={handleRemoveFile} />
+            <FileList files={files} onRemove={removeFile} />
 
             {files.length > 0 && (
                 <>
@@ -728,49 +544,266 @@ function MergePage() {
                                     {format === 'xci' ? 'Single XCI with all content — load directly in emulator' : 'Single NSP with all content'}
                                 </span>
                             </div>
+                            <div className="option-group">
+                                <Toggle checked={nodelta} onChange={setNodelta} label="Exclude Delta Fragments" />
+                                <span className="option-description">Skip delta NCA fragments during merge</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="dir-picker">
-                        <input
-                            type="text"
-                            value={outputDir}
-                            onChange={(e) => setOutputDir(e.target.value)}
-                            placeholder="Output directory (default: same as first file)"
-                        />
-                        <button className="btn btn-secondary btn-sm" onClick={handleSelectOutputDir}>
-                            Browse
-                        </button>
-                    </div>
+                    <OutputDirPicker outputDir={outputDir} setOutputDir={setOutputDir} selectOutputDir={selectOutputDir} />
 
                     {(running || outputLines.length > 0) && (
                         <ProgressDisplay progress={progress} outputLines={outputLines} />
                     )}
 
-                    <div className="actions-bar">
-                        <span className="spacer" />
-                        {running ? (
-                            <button className="btn btn-danger" onClick={handleCancel}>
-                                ✕ Cancel
-                            </button>
-                        ) : (
-                            <>
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => { setFiles([]); setOutputLines([]); setProgress(EMPTY_PROGRESS); }}
-                                >
-                                    Clear All
-                                </button>
-                                <button
-                                    className="btn btn-primary btn-lg"
-                                    onClick={handleStart}
-                                    disabled={files.length < 2}
-                                >
-                                    🔗 Start Merge
-                                </button>
-                            </>
-                        )}
+                    <ActionBar
+                        running={running}
+                        onCancel={handleCancel}
+                        onClear={handleClear}
+                        onStart={handleStart}
+                        startIcon="🔗"
+                        startLabel="Start Merge"
+                        startDisabled={files.length < 2}
+                    />
+                </>
+            )}
+        </div>
+    );
+}
+
+function ConvertPage() {
+    const { files, addFiles, removeFile, clearFiles } = useFileList();
+    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('convert');
+    const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
+    const [format, setFormat] = useState('xci');
+
+    const handleStart = async () => {
+        if (files.length === 0 || !window.nszAPI) return;
+        setRunning(true);
+        setProgress({ ...EMPTY_PROGRESS, message: 'Starting conversion...' });
+        setOutputLines([]);
+        await window.nszAPI.convert(files, {
+            output: outputDir || undefined,
+            format,
+        });
+    };
+
+    const handleCancel = async () => {
+        if (window.nszAPI) await window.nszAPI.cancel();
+        setRunning(false);
+        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+    };
+
+    const handleClear = () => { clearFiles(); setOutputLines([]); setProgress(EMPTY_PROGRESS); };
+
+    return (
+        <div>
+            <div className="page-header">
+                <h2>Convert</h2>
+                <p>Convert between NSP and XCI formats</p>
+            </div>
+
+            <DropZone
+                onFiles={addFiles}
+                accept={['nsp', 'xci']}
+                hint="Drop NSP or XCI files to convert"
+            />
+
+            <FileList files={files} onRemove={removeFile} />
+
+            {files.length > 0 && (
+                <>
+                    <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
+                        <div className="card-header">
+                            <span className="card-title">Convert Options</span>
+                        </div>
+                        <div className="options-panel">
+                            <div className="option-group">
+                                <label className="option-label">Output Format</label>
+                                <select value={format} onChange={(e) => setFormat(e.target.value)}>
+                                    <option value="xci">XCI (Game Cartridge)</option>
+                                    <option value="nsp">NSP (eShop Package)</option>
+                                </select>
+                                <span className="option-description">
+                                    {format === 'xci' ? 'Convert NSP → XCI' : 'Convert XCI → NSP'}
+                                </span>
+                            </div>
+                        </div>
                     </div>
+
+                    <OutputDirPicker outputDir={outputDir} setOutputDir={setOutputDir} selectOutputDir={selectOutputDir} />
+
+                    {(running || outputLines.length > 0) && (
+                        <ProgressDisplay progress={progress} outputLines={outputLines} />
+                    )}
+
+                    <ActionBar
+                        running={running}
+                        onCancel={handleCancel}
+                        onClear={handleClear}
+                        onStart={handleStart}
+                        startIcon="🔄"
+                        startLabel="Start Conversion"
+                    />
+                </>
+            )}
+        </div>
+    );
+}
+
+function SplitPage() {
+    const { files, addFiles, removeFile, clearFiles } = useFileList();
+    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('split');
+    const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
+
+    const handleStart = async () => {
+        if (files.length === 0 || !window.nszAPI) return;
+        setRunning(true);
+        setProgress({ ...EMPTY_PROGRESS, message: 'Starting split...' });
+        setOutputLines([]);
+        await window.nszAPI.split(files, {
+            output: outputDir || undefined,
+        });
+    };
+
+    const handleCancel = async () => {
+        if (window.nszAPI) await window.nszAPI.cancel();
+        setRunning(false);
+        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+    };
+
+    const handleClear = () => { clearFiles(); setOutputLines([]); setProgress(EMPTY_PROGRESS); };
+
+    return (
+        <div>
+            <div className="page-header">
+                <h2>Split</h2>
+                <p>Split multi-title files into separate files by title ID (CNMT-aware naming)</p>
+            </div>
+
+            <DropZone
+                onFiles={addFiles}
+                accept={['nsp', 'xci']}
+                hint="Drop NSP or XCI files to split by title ID"
+            />
+
+            <FileList files={files} onRemove={removeFile} />
+
+            {files.length > 0 && (
+                <>
+                    <OutputDirPicker outputDir={outputDir} setOutputDir={setOutputDir} selectOutputDir={selectOutputDir} />
+
+                    {(running || outputLines.length > 0) && (
+                        <ProgressDisplay progress={progress} outputLines={outputLines} />
+                    )}
+
+                    <ActionBar
+                        running={running}
+                        onCancel={handleCancel}
+                        onClear={handleClear}
+                        onStart={handleStart}
+                        startIcon="✂️"
+                        startLabel="Start Split"
+                    />
+                </>
+            )}
+        </div>
+    );
+}
+
+const XCI_OPS = ['xci_trim', 'xci_super_trim', 'xci_untrim'];
+
+function XciTrimPage() {
+    const { files, addFiles, removeFile, clearFiles } = useFileList();
+    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents(XCI_OPS);
+    const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
+    const [trimMode, setTrimMode] = useState('trim');
+
+    const handleStart = async () => {
+        if (files.length === 0 || !window.nszAPI) return;
+        setRunning(true);
+        setProgress({ ...EMPTY_PROGRESS, message: `Starting ${trimMode}...` });
+        setOutputLines([]);
+
+        const opts = { output: outputDir || undefined };
+
+        if (trimMode === 'trim') {
+            await window.nszAPI.xciTrim(files, opts);
+        } else if (trimMode === 'super_trim') {
+            await window.nszAPI.xciSuperTrim(files, opts);
+        } else {
+            await window.nszAPI.xciUntrim(files, opts);
+        }
+    };
+
+    const handleCancel = async () => {
+        if (window.nszAPI) await window.nszAPI.cancel();
+        setRunning(false);
+        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+    };
+
+    const handleClear = () => { clearFiles(); setOutputLines([]); setProgress(EMPTY_PROGRESS); };
+
+    function trimModeDescription() {
+        switch (trimMode) {
+            case 'trim': return 'Remove cartridge padding to save space';
+            case 'super_trim': return 'Aggressive trimming for minimal file size';
+            case 'untrim': return 'Restore XCI to original full cartridge size';
+            default: return '';
+        }
+    }
+
+    return (
+        <div>
+            <div className="page-header">
+                <h2>XCI Trim</h2>
+                <p>Trim, super-trim, or untrim XCI cartridge files</p>
+            </div>
+
+            <DropZone
+                onFiles={addFiles}
+                accept={['xci']}
+                hint="Drop XCI files to trim"
+            />
+
+            <FileList files={files} onRemove={removeFile} />
+
+            {files.length > 0 && (
+                <>
+                    <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
+                        <div className="card-header">
+                            <span className="card-title">Trim Options</span>
+                        </div>
+                        <div className="options-panel">
+                            <div className="option-group">
+                                <label className="option-label">Trim Mode</label>
+                                <select value={trimMode} onChange={(e) => setTrimMode(e.target.value)}>
+                                    <option value="trim">Trim (remove padding)</option>
+                                    <option value="super_trim">Super-trim (minimal size)</option>
+                                    <option value="untrim">Untrim (restore full card size)</option>
+                                </select>
+                                <span className="option-description">
+                                    {trimModeDescription()}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <OutputDirPicker outputDir={outputDir} setOutputDir={setOutputDir} selectOutputDir={selectOutputDir} />
+
+                    {(running || outputLines.length > 0) && (
+                        <ProgressDisplay progress={progress} outputLines={outputLines} />
+                    )}
+
+                    <ActionBar
+                        running={running}
+                        onCancel={handleCancel}
+                        onClear={handleClear}
+                        onStart={handleStart}
+                        startIcon="📐"
+                        startLabel={trimMode === 'untrim' ? 'Start Untrim' : 'Start Trim'}
+                    />
                 </>
             )}
         </div>
@@ -780,15 +813,7 @@ function MergePage() {
 function SettingsPage() {
     const [settings, setSettings] = useState({
         defaultLevel: 18,
-        defaultThreads: -1,
-        defaultMulti: 4,
         defaultOutputDir: '',
-        defaultVerify: 'quick',
-        defaultBlockSize: 20,
-        fixPadding: false,
-        parseCnmt: false,
-        rmOldVersion: false,
-        rmSource: false,
     });
     const [saved, setSaved] = useState(false);
 
@@ -822,7 +847,7 @@ function SettingsPage() {
         <div>
             <div className="page-header">
                 <h2>Settings</h2>
-                <p>Default options for compression and decompression</p>
+                <p>Default options for operations</p>
             </div>
 
             <div className="settings-grid">
@@ -847,133 +872,6 @@ function SettingsPage() {
                             </div>
                         </div>
                     </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Default Threads</h4>
-                            <p>-1 for auto-detect CPU cores</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <input
-                                type="number"
-                                value={settings.defaultThreads}
-                                onChange={(e) => update('defaultThreads', Number(e.target.value))}
-                                min="-1"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Parallel Tasks</h4>
-                            <p>Number of files to compress in parallel</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <input
-                                type="number"
-                                value={settings.defaultMulti}
-                                onChange={(e) => update('defaultMulti', Number(e.target.value))}
-                                min="1"
-                                max="16"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Block Size</h4>
-                            <p>Block size for random read access (2^x bytes)</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <select
-                                value={settings.defaultBlockSize}
-                                onChange={(e) => update('defaultBlockSize', Number(e.target.value))}
-                            >
-                                <option value={16}>64 KB</option>
-                                <option value={17}>128 KB</option>
-                                <option value={18}>256 KB</option>
-                                <option value={19}>512 KB</option>
-                                <option value={20}>1 MB (default)</option>
-                                <option value={21}>2 MB</option>
-                                <option value={22}>4 MB</option>
-                                <option value={23}>8 MB</option>
-                                <option value={24}>16 MB</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Verification</h4>
-                            <p>Default verify mode after compression</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <select
-                                value={settings.defaultVerify}
-                                onChange={(e) => update('defaultVerify', e.target.value)}
-                            >
-                                <option value="none">None</option>
-                                <option value="quick">Quick (NCA hashes)</option>
-                                <option value="full">Full (NCA + PFS0)</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="settings-section">
-                    <h3 className="settings-section-title">Advanced</h3>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Fix Padding</h4>
-                            <p>Fix PFS0 padding to match nxdumptool/no-intro standard</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <Toggle
-                                checked={settings.fixPadding}
-                                onChange={(v) => update('fixPadding', v)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Parse CNMT</h4>
-                            <p>Extract TitleId/Version from CNMT metadata</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <Toggle
-                                checked={settings.parseCnmt}
-                                onChange={(v) => update('parseCnmt', v)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Remove Old Versions</h4>
-                            <p>Automatically remove older versions when found</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <Toggle
-                                checked={settings.rmOldVersion}
-                                onChange={(v) => update('rmOldVersion', v)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Remove Source Files</h4>
-                            <p>Delete source after processing (use with verify!)</p>
-                        </div>
-                        <div className="settings-row-control">
-                            <Toggle
-                                checked={settings.rmSource}
-                                onChange={(v) => update('rmSource', v)}
-                            />
-                        </div>
-                    </div>
                 </div>
 
                 <div className="settings-section">
@@ -981,7 +879,7 @@ function SettingsPage() {
                     <div className="settings-row">
                         <div className="settings-row-label">
                             <h4>Default Output Directory</h4>
-                            <p>Where compressed/decompressed files are saved by default</p>
+                            <p>Where processed files are saved by default</p>
                         </div>
                         <div className="settings-row-control" style={{ minWidth: '280px' }}>
                             <div className="dir-picker">
@@ -1102,7 +1000,7 @@ function SetupPage({ onComplete, needsKeys }) {
                 <div className="setup-icon">🎮</div>
                 <h1 className="setup-title">NSZ Desktop</h1>
                 <p className="setup-subtitle">
-                    Modern GUI for NSZ compression, decompression & merging
+                    Modern GUI for Switch file compression, conversion & merging
                 </p>
 
                 <div className="setup-divider" />
@@ -1110,7 +1008,7 @@ function SetupPage({ onComplete, needsKeys }) {
                 <div className="setup-instruction">
                     <h3>Locate Tools Directory</h3>
                     <p>
-                        Select the directory containing <code>nsz.exe</code>, <code>squirrel.exe</code>,
+                        Select the directory containing <code>nscb_rust.exe</code>
                         and <code>prod.keys</code> (or <code>keys.txt</code>).
                     </p>
                 </div>
@@ -1175,8 +1073,8 @@ export default function App() {
     // Listen for errors from main process
     useEffect(() => {
         if (!window.nszAPI) return;
-        const unsub = window.nszAPI.onError((msg) => {
-            addToast(msg, 'error');
+        const unsub = window.nszAPI.onError((data) => {
+            addToast(data.message || data, 'error');
         });
         return unsub;
     }, [addToast]);
@@ -1212,29 +1110,28 @@ export default function App() {
         );
     }
 
+    const pages = {
+        'compress': CompressPage,
+        'decompress': DecompressPage,
+        'merge': MergePage,
+        'convert': ConvertPage,
+        'split': SplitPage,
+        'xci-trim': XciTrimPage,
+        'settings': SettingsPage,
+    };
+
     // Main app
     return (
         <div className="app-shell">
             <Sidebar activePage={activePage} onNavigate={setActivePage} />
             <main className="main-content">
-                <div style={{ display: activePage === 'compress' ? 'block' : 'none' }}>
-                    <CompressPage />
-                </div>
-                <div style={{ display: activePage === 'decompress' ? 'block' : 'none' }}>
-                    <DecompressPage />
-                </div>
-                <div style={{ display: activePage === 'merge' ? 'block' : 'none' }}>
-                    <MergePage />
-                </div>
-                <div style={{ display: activePage === 'info' ? 'block' : 'none' }}>
-                    <InfoPage />
-                </div>
-                <div style={{ display: activePage === 'settings' ? 'block' : 'none' }}>
-                    <SettingsPage />
-                </div>
+                {Object.entries(pages).map(([id, PageComponent]) => (
+                    <div key={id} style={{ display: activePage === id ? 'block' : 'none' }}>
+                        <PageComponent />
+                    </div>
+                ))}
             </main>
             <ToastContainer toasts={toasts} />
         </div>
     );
 }
-

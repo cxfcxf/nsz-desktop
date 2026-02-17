@@ -20,33 +20,33 @@ contextBridge.exposeInMainWorld('nszAPI', {
     // File operations
     compress: (files, options) => ipcRenderer.invoke('nsz:compress', files, options),
     decompress: (files, options) => ipcRenderer.invoke('nsz:decompress', files, options),
-    getInfo: (files) => ipcRenderer.invoke('nsz:info', files),
-    extract: (files, options) => ipcRenderer.invoke('nsz:extract', files, options),
     cancel: () => ipcRenderer.invoke('nsz:cancel'),
+
+    // Merge
+    mergeFiles: (files, options) => ipcRenderer.invoke('merge:start', files, options),
+
+    // Convert
+    convert: (files, options) => ipcRenderer.invoke('nsz:convert', files, options),
+
+    // Split
+    split: (files, options) => ipcRenderer.invoke('nsz:split', files, options),
+
+    // XCI Trim
+    xciTrim: (files, options) => ipcRenderer.invoke('nsz:xciTrim', files, options),
+    xciSuperTrim: (files, options) => ipcRenderer.invoke('nsz:xciSuperTrim', files, options),
+    xciUntrim: (files, options) => ipcRenderer.invoke('nsz:xciUntrim', files, options),
 
     // Dialogs
     selectFiles: (filters) => ipcRenderer.invoke('dialog:openFiles', filters),
     selectOutputDir: () => ipcRenderer.invoke('dialog:openDir'),
 
-    // NSZ events
+    // Events (shared by all operations via the unified runner)
     onProgress: onChannel('nsz:progress'),
     onOutput: onChannel('nsz:output'),
     onStatus: onChannel('nsz:status'),
     onDone: onChannel('nsz:done'),
     onError: onChannel('nsz:error'),
     onLog: onChannel('nsz:log'),
-
-    // Merge operations
-    mergeFiles: (files, options) => ipcRenderer.invoke('merge:start', files, options),
-    cancelMerge: () => ipcRenderer.invoke('merge:cancel'),
-    hasSquirrel: () => ipcRenderer.invoke('merge:hasSquirrel'),
-
-    // Merge events
-    onMergeProgress: onChannel('merge:progress'),
-    onMergeOutput: onChannel('merge:output'),
-    onMergeDone: onChannel('merge:done'),
-    onMergeError: onChannel('merge:error'),
-    onMergeLog: onChannel('merge:log'),
 
     // Keys
     hasKeys: () => ipcRenderer.invoke('setup:hasKeys'),
