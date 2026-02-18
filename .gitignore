@@ -1,7 +1,9 @@
 node_modules/
 dist/
 release/
-build/
+build/*
+!build/icon.ico
+!build/icon.png
 *.log
 
 # Never commit encryption keys (DMCA)

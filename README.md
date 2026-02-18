@@ -14,7 +14,8 @@ Built with Electron + React + Vite. Powered by [nscb_rust](https://github.com/cx
 - **Create / Repack** — rebuild an NSP from a split NCA folder
 - Drag & drop file support
 - Real-time progress bar and output console
-- Batch processing: compress/decompress/convert/split run files sequentially
+- Batch processing: compress/decompress/convert/split process multiple files sequentially
+- Custom Switch-style app icon
 - Settings persistence across sessions
 
 ## Prerequisites

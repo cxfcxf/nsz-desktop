@@ -83,6 +83,7 @@ function createWindow() {
         minHeight: 600,
         backgroundColor: '#0d1117',
         title: 'NSZ Desktop',
+        icon: isDev ? path.join(__dirname, '..', 'build', 'icon.ico') : undefined,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
