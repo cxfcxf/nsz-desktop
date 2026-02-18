@@ -3,6 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
 
+// Operations that accept only one file per invocation in nscb_rust
+const SINGLE_FILE_OPS = new Set(['compress', 'decompress', 'convert', 'split']);
+
 class NszRunner extends EventEmitter {
     constructor(nszDir) {
         super();
@@ -65,23 +68,25 @@ class NszRunner extends EventEmitter {
             case 'split':
                 args.push('--splitter', ...files);
                 break;
-            case 'xci_trim':
-                args.push('--xci_trim', ...files);
+            case 'create': {
+                // files[0] is the input folder (split output); derive NSP output path
+                const folderName = path.basename(files[0]);
+                const outDir = options.output || path.dirname(files[0]);
+                const outNsp = path.join(outDir, `${folderName}.nsp`);
+                args.push('--create', outNsp, '--ifolder', files[0]);
                 break;
-            case 'xci_super_trim':
-                args.push('--xci_super_trim', ...files);
-                break;
-            case 'xci_untrim':
-                args.push('--xci_untrim', ...files);
-                break;
+            }
         }
 
-        // Output directory: use explicit option, or default to first file's parent dir
-        if (options.output) {
-            args.push('-o', options.output);
-        } else if (files.length > 0) {
-            args.push('-o', path.dirname(files[0]));
+        // Output directory (not used for 'create' — embedded in --create arg)
+        if (operation !== 'create') {
+            if (options.output) {
+                args.push('-o', options.output);
+            } else if (files.length > 0) {
+                args.push('-o', path.dirname(files[0]));
+            }
         }
+
         if (options.buffer) {
             args.push('-b', String(options.buffer));
         }
@@ -106,48 +111,77 @@ class NszRunner extends EventEmitter {
         }
 
         this.currentOperation = operation;
-        const args = this._buildArgs(operation, files, options);
 
-        this.emit('log', `Running: ${this.exePath} ${args.join(' ')}`);
-        this.emit('output', { op: operation, line: `> ${this.exePath} ${args.join(' ')}` });
+        // Single-file operations (compress/decompress/convert/split) accept one file
+        // per invocation — batch them sequentially if multiple files are provided.
+        const batches = SINGLE_FILE_OPS.has(operation) && files.length > 1
+            ? files.map(f => [f])
+            : [files];
 
-        this.process = spawn(this.exePath, args, {
-            cwd: this.nszDir,
-            windowsHide: true,
-        });
+        let batchIdx = 0;
 
-        this.process.stdout.on('data', (data) => {
-            const text = data.toString('utf-8');
-            const lines = text.split(/[\r\n]+/);
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (trimmed) {
-                    this.emit('output', { op: operation, line: trimmed });
-                    this._parseLine(operation, trimmed);
-                }
-            }
-        });
-
-        this.process.stderr.on('data', (data) => {
-            const text = data.toString('utf-8');
-            const clean = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
-            this._parseStderrChunk(operation, clean);
-        });
-
-        this.process.on('close', (code) => {
-            this.process = null;
-            this.currentOperation = null;
-            if (code === 0) {
+        const spawnNext = () => {
+            if (batchIdx >= batches.length) {
+                this.currentOperation = null;
                 this.emit('progress', { op: operation, percent: 100, message: 'Done!' });
+                this.emit('done', { op: operation, code: 0 });
+                return;
             }
-            this.emit('done', { op: operation, code });
-        });
 
-        this.process.on('error', (err) => {
-            this.process = null;
-            this.currentOperation = null;
-            this.emit('nsz-error', { op: operation, message: `Failed to start nscb_rust.exe: ${err.message}` });
-        });
+            const currentFiles = batches[batchIdx];
+            if (batches.length > 1) {
+                this.emit('output', {
+                    op: operation,
+                    line: `[File ${batchIdx + 1}/${batches.length}] ${path.basename(currentFiles[0])}`,
+                });
+            }
+            batchIdx++;
+
+            const args = this._buildArgs(operation, currentFiles, options);
+            this.emit('log', `Running: ${this.exePath} ${args.join(' ')}`);
+            this.emit('output', { op: operation, line: `> ${this.exePath} ${args.join(' ')}` });
+
+            this.process = spawn(this.exePath, args, {
+                cwd: this.nszDir,
+                windowsHide: true,
+            });
+
+            this.process.stdout.on('data', (data) => {
+                const lines = data.toString('utf-8').split(/[\r\n]+/);
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed) {
+                        this.emit('output', { op: operation, line: trimmed });
+                        this._parseLine(operation, trimmed);
+                    }
+                }
+            });
+
+            this.process.stderr.on('data', (data) => {
+                const clean = data.toString('utf-8')
+                    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+                    .replace(/\x1b\][^\x07]*\x07/g, '');
+                this._parseStderrChunk(operation, clean);
+            });
+
+            this.process.on('close', (code) => {
+                this.process = null;
+                if (code !== 0) {
+                    this.currentOperation = null;
+                    this.emit('done', { op: operation, code });
+                    return;
+                }
+                setImmediate(spawnNext);
+            });
+
+            this.process.on('error', (err) => {
+                this.process = null;
+                this.currentOperation = null;
+                this.emit('nsz-error', { op: operation, message: `Failed to start nscb_rust.exe: ${err.message}` });
+            });
+        };
+
+        spawnNext();
     }
 
     _parseLine(op, line) {

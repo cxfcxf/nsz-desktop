@@ -217,14 +217,12 @@ app.whenReady().then(() => {
 
     // ── NSZ operations (unified runner) ─────────────────────────
     const operationChannels = {
-        'nsz:compress':      'compress',
-        'nsz:decompress':    'decompress',
-        'merge:start':       'merge',
-        'nsz:convert':       'convert',
-        'nsz:split':         'split',
-        'nsz:xciTrim':       'xci_trim',
-        'nsz:xciSuperTrim':  'xci_super_trim',
-        'nsz:xciUntrim':     'xci_untrim',
+        'nsz:compress':   'compress',
+        'nsz:decompress': 'decompress',
+        'merge:start':    'merge',
+        'nsz:convert':    'convert',
+        'nsz:split':      'split',
+        'nsz:create':     'create',
     };
 
     for (const [channel, operation] of Object.entries(operationChannels)) {

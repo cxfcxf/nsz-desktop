@@ -31,10 +31,8 @@ contextBridge.exposeInMainWorld('nszAPI', {
     // Split
     split: (files, options) => ipcRenderer.invoke('nsz:split', files, options),
 
-    // XCI Trim
-    xciTrim: (files, options) => ipcRenderer.invoke('nsz:xciTrim', files, options),
-    xciSuperTrim: (files, options) => ipcRenderer.invoke('nsz:xciSuperTrim', files, options),
-    xciUntrim: (files, options) => ipcRenderer.invoke('nsz:xciUntrim', files, options),
+    // Create/Repack NSP from split folder
+    create: (files, options) => ipcRenderer.invoke('nsz:create', files, options),
 
     // Dialogs
     selectFiles: (filters) => ipcRenderer.invoke('dialog:openFiles', filters),

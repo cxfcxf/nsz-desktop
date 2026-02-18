@@ -109,7 +109,7 @@ function Sidebar({ activePage, onNavigate }) {
         { id: 'merge', icon: '🔗', label: 'Merge' },
         { id: 'convert', icon: '🔄', label: 'Convert' },
         { id: 'split', icon: '✂️', label: 'Split' },
-        { id: 'xci-trim', icon: '📐', label: 'XCI Trim' },
+        { id: 'create', icon: '🗜️', label: 'Create/Repack' },
         { id: 'settings', icon: '⚙️', label: 'Settings' },
     ];
 
@@ -679,13 +679,13 @@ function SplitPage() {
         <div>
             <div className="page-header">
                 <h2>Split</h2>
-                <p>Split multi-title files into separate files by title ID (CNMT-aware naming)</p>
+                <p>Split a multi-title file into per-title folders with NCA files (title-aware naming)</p>
             </div>
 
             <DropZone
                 onFiles={addFiles}
                 accept={['nsp', 'xci']}
-                hint="Drop NSP or XCI files to split by title ID"
+                hint="Drop NSP or XCI files to split into per-title NCA folders"
             />
 
             <FileList files={files} onRemove={removeFile} />
@@ -712,29 +712,25 @@ function SplitPage() {
     );
 }
 
-const XCI_OPS = ['xci_trim', 'xci_super_trim', 'xci_untrim'];
-
-function XciTrimPage() {
-    const { files, addFiles, removeFile, clearFiles } = useFileList();
-    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents(XCI_OPS);
+function CreatePage() {
+    const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('create');
     const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
-    const [trimMode, setTrimMode] = useState('trim');
+    const [inputFolder, setInputFolder] = useState('');
+
+    const handleSelectFolder = useCallback(async () => {
+        if (!window.nszAPI) return;
+        const dir = await window.nszAPI.selectOutputDir();
+        if (dir) setInputFolder(dir);
+    }, []);
 
     const handleStart = async () => {
-        if (files.length === 0 || !window.nszAPI) return;
+        if (!inputFolder || !window.nszAPI) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: `Starting ${trimMode}...` });
+        setProgress({ ...EMPTY_PROGRESS, message: 'Starting repack...' });
         setOutputLines([]);
-
-        const opts = { output: outputDir || undefined };
-
-        if (trimMode === 'trim') {
-            await window.nszAPI.xciTrim(files, opts);
-        } else if (trimMode === 'super_trim') {
-            await window.nszAPI.xciSuperTrim(files, opts);
-        } else {
-            await window.nszAPI.xciUntrim(files, opts);
-        }
+        await window.nszAPI.create([inputFolder], {
+            output: outputDir || undefined,
+        });
     };
 
     const handleCancel = async () => {
@@ -743,53 +739,50 @@ function XciTrimPage() {
         setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
     };
 
-    const handleClear = () => { clearFiles(); setOutputLines([]); setProgress(EMPTY_PROGRESS); };
+    const handleClear = () => {
+        setInputFolder('');
+        setOutputLines([]);
+        setProgress(EMPTY_PROGRESS);
+    };
 
-    function trimModeDescription() {
-        switch (trimMode) {
-            case 'trim': return 'Remove cartridge padding to save space';
-            case 'super_trim': return 'Aggressive trimming for minimal file size';
-            case 'untrim': return 'Restore XCI to original full cartridge size';
-            default: return '';
-        }
-    }
+    const getFolderName = (p) => p.replace(/\\/g, '/').split('/').pop();
 
     return (
         <div>
             <div className="page-header">
-                <h2>XCI Trim</h2>
-                <p>Trim, super-trim, or untrim XCI cartridge files</p>
+                <h2>Create / Repack</h2>
+                <p>Repack a split NCA folder back into an NSP file</p>
             </div>
 
-            <DropZone
-                onFiles={addFiles}
-                accept={['xci']}
-                hint="Drop XCI files to trim"
-            />
-
-            <FileList files={files} onRemove={removeFile} />
-
-            {files.length > 0 && (
-                <>
-                    <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
-                        <div className="card-header">
-                            <span className="card-title">Trim Options</span>
+            <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
+                <div className="card-header">
+                    <span className="card-title">Input Folder</span>
+                </div>
+                <div className="options-panel">
+                    <div className="option-group">
+                        <label className="option-label">NCA Source Folder</label>
+                        <div className="dir-picker">
+                            <input
+                                type="text"
+                                value={inputFolder}
+                                onChange={(e) => setInputFolder(e.target.value)}
+                                placeholder="Select the folder produced by Split..."
+                            />
+                            <button className="btn btn-secondary btn-sm" onClick={handleSelectFolder}>
+                                Browse
+                            </button>
                         </div>
-                        <div className="options-panel">
-                            <div className="option-group">
-                                <label className="option-label">Trim Mode</label>
-                                <select value={trimMode} onChange={(e) => setTrimMode(e.target.value)}>
-                                    <option value="trim">Trim (remove padding)</option>
-                                    <option value="super_trim">Super-trim (minimal size)</option>
-                                    <option value="untrim">Untrim (restore full card size)</option>
-                                </select>
-                                <span className="option-description">
-                                    {trimModeDescription()}
-                                </span>
-                            </div>
-                        </div>
+                        {inputFolder && (
+                            <span className="option-description">
+                                Will create: <code>{getFolderName(inputFolder)}.nsp</code>
+                            </span>
+                        )}
                     </div>
+                </div>
+            </div>
 
+            {inputFolder && (
+                <>
                     <OutputDirPicker outputDir={outputDir} setOutputDir={setOutputDir} selectOutputDir={selectOutputDir} />
 
                     {(running || outputLines.length > 0) && (
@@ -801,8 +794,8 @@ function XciTrimPage() {
                         onCancel={handleCancel}
                         onClear={handleClear}
                         onStart={handleStart}
-                        startIcon="📐"
-                        startLabel={trimMode === 'untrim' ? 'Start Untrim' : 'Start Trim'}
+                        startIcon="🗜️"
+                        startLabel="Start Repack"
                     />
                 </>
             )}
@@ -1116,7 +1109,7 @@ export default function App() {
         'merge': MergePage,
         'convert': ConvertPage,
         'split': SplitPage,
-        'xci-trim': XciTrimPage,
+        'create': CreatePage,
         'settings': SettingsPage,
     };
 

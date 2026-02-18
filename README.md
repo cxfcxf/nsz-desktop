@@ -1,6 +1,6 @@
 # NSZ Desktop
 
-Modern desktop GUI for Nintendo Switch game file operations — compress, decompress, merge, convert, split, and trim game files (NSP, XCI, NSZ, XCZ, NCZ).
+Modern desktop GUI for Nintendo Switch game file operations — compress, decompress, merge, convert, split, and repack game files (NSP, XCI, NSZ, XCZ, NCZ).
 
 Built with Electron + React + Vite. Powered by [nscb_rust](https://github.com/cxfcxf/nscb_rust).
 
@@ -10,10 +10,11 @@ Built with Electron + React + Vite. Powered by [nscb_rust](https://github.com/cx
 - **Decompress** NSZ/XCZ/NCZ back to NSP/XCI
 - **Merge** base game + updates + DLCs into a single XCI or NSP
 - **Convert** between NSP and XCI formats
-- **Split** multi-title files into separate files by title ID (CNMT-aware naming)
-- **XCI Trim** — trim, super-trim, or untrim XCI cartridge files
+- **Split** multi-title file into per-title NCA folders (title-aware naming)
+- **Create / Repack** — rebuild an NSP from a split NCA folder
 - Drag & drop file support
 - Real-time progress bar and output console
+- Batch processing: compress/decompress/convert/split run files sequentially
 - Settings persistence across sessions
 
 ## Prerequisites
@@ -33,7 +34,12 @@ Grab the latest release from the [Releases](https://github.com/cxfcxf/nsz-deskto
 
 1. Run the app
 2. On first launch, the setup wizard will prompt you to select your `prod.keys` file
-3. Use the sidebar to navigate between Compress, Decompress, Merge, Convert, Split, XCI Trim, and Settings
+3. Use the sidebar to navigate between Compress, Decompress, Merge, Convert, Split, Create/Repack, and Settings
+
+### Workflow: Split → Repack
+
+1. **Split** a multi-title NSP/XCI — outputs a folder per title, e.g. `Game Title [TitleID]/`
+2. **Create/Repack** — select that folder to repack it back into a single NSP
 
 ## Backend
 
