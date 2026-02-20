@@ -27,13 +27,12 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 
 ## Usage
 
-1. Unzip the portable package (or run the NSIS installer).
-2. Run `nscb-desktop.exe`.
-3. The setup wizard will prompt you to import:
+1. Run `nscb-desktop.exe` directly (standalone, no install needed), or use the NSIS/MSI installer.
+2. The setup wizard will prompt you to import:
    - **Encryption keys** (`prod.keys` or `keys.txt`) — each item shows a checkmark once imported
    - **Backend binary** (`nscb_rust.exe`)
-4. Files are copied to a temporary tools directory (`%TEMP%\nscb-desktop-tools`).
-5. Pick an operation from the sidebar and drop your files.
+3. Files are copied to a temporary tools directory (`%TEMP%\nscb-desktop-tools`).
+4. Pick an operation from the sidebar and drop your files.
 
 ## Development
 
