@@ -22,19 +22,30 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup MSVC (link.exe)
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npx vite build && npx electron-builder --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Build Tauri bundles
+        run: npm run build
 
-      - name: Zip win-unpacked
-        run: Compress-Archive -Path release\win-unpacked\* -DestinationPath release\NSZ-Desktop-win-unpacked.zip
+      - name: Build portable folder
+        run: node scripts/portable.mjs
 
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} --title "Release ${{ github.ref_name }}" --generate-notes release/NSZ-Desktop-Portable.exe release/NSZ-Desktop-Setup.exe release/NSZ-Desktop-win-unpacked.zip
+          gh release create ${{ github.ref_name }} `
+            --title "Release ${{ github.ref_name }}" `
+            --generate-notes `
+            src-tauri/target/release/bundle/nsis/*-setup.exe `
+            src-tauri/target/release/bundle/msi/*.msi `
+            "release/NSZ Desktop/nsz-desktop.exe"

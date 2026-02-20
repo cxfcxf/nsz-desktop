@@ -1,13 +1,18 @@
 node_modules/
 dist/
 release/
-build/*
-!build/icon.ico
-!build/icon.png
 *.log
 
-# Never commit encryption keys (DMCA)
-tools/keys.txt
-tools/prod.keys
-tools/title.keys
-tools/titlekeys.txt
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Tools directory — binaries and keys are imported at runtime, never committed
+tools/
+
+# Claude Code local settings
+.claude/
+
+# Environment files
+*.env
+*.env.*

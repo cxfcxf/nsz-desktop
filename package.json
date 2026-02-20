@@ -1,14 +1,16 @@
 {
   "name": "nsz-desktop",
   "version": "1.0.0",
-  "description": "Modern Electron desktop app for NSZ compression/decompression",
-  "main": "electron/main.js",
+  "description": "Modern desktop app for NSZ compression/decompression",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "build": "vite build",
-    "start": "electron .",
-    "pack": "vite build && electron-builder --dir",
-    "dist": "vite build && electron-builder"
+    "dev:vite": "vite",
+    "build:vite": "vite build",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "dist:portable": "tauri build && node scripts/portable.mjs",
+    "tauri": "tauri"
   },
   "keywords": [
     "nsz",
@@ -17,63 +19,20 @@
   ],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
-  "build": {
-    "appId": "com.nsz.desktop",
-    "productName": "NSZ Desktop",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        },
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "dir",
-          "arch": ["x64"]
-        }
-      ],
-      "signAndEditExecutable": false
-    },
-    "portable": {
-      "artifactName": "NSZ-Desktop-Portable.exe"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "artifactName": "NSZ-Desktop-Setup.exe"
-    },
-    "asar": true,
-    "extraResources": [
-      {
-        "from": "tools",
-        "to": "tools",
-        "filter": ["**/*"]
-      }
-    ]
-  },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.10.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
-    "concurrently": "^9.2.1",
-    "cross-env": "^10.1.0",
-    "electron": "^40.4.1",
-    "electron-builder": "^26.0.12",
-    "vite": "^7.3.1",
-    "wait-on": "^9.0.4"
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-opener": "^2.5.3",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   }
