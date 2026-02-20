@@ -1,7 +1,7 @@
 {
-  "productName": "NSZ Desktop",
+  "productName": "NSCB Desktop",
   "version": "1.0.0",
-  "identifier": "com.nsz.desktop",
+  "identifier": "com.nscb.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "NSZ Desktop",
+        "title": "NSCB Desktop",
         "width": 1100,
         "height": 750,
         "minWidth": 900,

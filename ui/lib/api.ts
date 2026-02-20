@@ -56,7 +56,7 @@ export async function getToolsDir(): Promise<string> {
     return cachedToolsDir;
 }
 
-export async function getNszDir(): Promise<string | null> {
+export async function getToolsDirOrNull(): Promise<string | null> {
     try {
         return await getToolsDir();
     } catch {

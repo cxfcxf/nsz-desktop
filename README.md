@@ -1,4 +1,4 @@
-# NSZ Desktop
+# NSCB Desktop
 
 Modern desktop GUI for Nintendo Switch game file operations: compress, decompress, merge, convert, split, and repack (NSP, XCI, NSZ, XCZ, NCZ).
 
@@ -28,11 +28,11 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 ## Usage
 
 1. Unzip the portable package (or run the NSIS installer).
-2. Run `NSZ Desktop.exe`.
+2. Run `nscb-desktop.exe`.
 3. The setup wizard will prompt you to import:
    - **Encryption keys** (`prod.keys` or `keys.txt`) — each item shows a checkmark once imported
    - **Backend binary** (`nscb_rust.exe`)
-4. Files are copied to a temporary tools directory (`%TEMP%\nsz-desktop-tools`).
+4. Files are copied to a temporary tools directory (`%TEMP%\nscb-desktop-tools`).
 5. Pick an operation from the sidebar and drop your files.
 
 ## Development
@@ -51,21 +51,21 @@ npm run dev:vite   # Vite dev server only (no Tauri)
 # NSIS installer
 npm run build
 
-# Portable folder at release/NSZ Desktop/
+# Portable folder at release/NSCB Desktop/
 npm run dist:portable
 ```
 
 ## Project Layout
 
 ```text
-nsz-desktop/
+nscb-desktop/
 |- ui/                     # Frontend (React + TypeScript)
 |  |- App.tsx              # All components + pages (config-driven)
 |  |- App.css              # Dark theme design system
 |  |- main.tsx             # Entry point
 |  `- lib/
 |     |- api.ts            # Tauri plugin wrappers
-|     `- nsz-runner.ts     # Sidecar process + progress parsing
+|     `- nscb-runner.ts     # Sidecar process + progress parsing
 |- src-tauri/              # Tauri v2 / Rust backend
 |  |- src/lib.rs           # Commands: run_nscb, import_keys, etc.
 |  |- tauri.conf.json      # Window config, sidecar, bundling
@@ -76,7 +76,7 @@ nsz-desktop/
 ## Notes
 
 - Operation pages are config-driven via a generic `OperationPage` component — adding a new operation only requires a config object.
-- Backend and key files are imported at runtime into `%TEMP%\nsz-desktop-tools`.
+- Backend and key files are imported at runtime into `%TEMP%\nscb-desktop-tools`.
 - The app uses native window decorations (no custom titlebar).
 
 ## License

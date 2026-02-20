@@ -1,12 +1,12 @@
 [package]
-name = "nsz-desktop"
+name = "nscb-desktop"
 version = "1.0.0"
-description = "Modern desktop app for NSZ compression/decompression"
+description = "Modern desktop app for Nintendo Switch file operations"
 authors = []
 edition = "2021"
 
 [lib]
-name = "nsz_desktop_lib"
+name = "nscb_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

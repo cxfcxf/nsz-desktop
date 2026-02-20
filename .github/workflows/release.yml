@@ -48,4 +48,4 @@ jobs:
             --generate-notes `
             src-tauri/target/release/bundle/nsis/*-setup.exe `
             src-tauri/target/release/bundle/msi/*.msi `
-            "release/NSZ Desktop/nsz-desktop.exe"
+            "release/NSCB Desktop/nscb-desktop.exe"

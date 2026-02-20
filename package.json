@@ -1,7 +1,7 @@
 {
-  "name": "nsz-desktop",
+  "name": "nscb-desktop",
   "version": "1.0.0",
-  "description": "Modern desktop app for NSZ compression/decompression",
+  "description": "Modern desktop app for Nintendo Switch file operations",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,9 +13,10 @@
     "tauri": "tauri"
   },
   "keywords": [
-    "nsz",
+    "nscb",
     "switch",
-    "compression"
+    "nsp",
+    "xci"
   ],
   "author": "",
   "license": "ISC",

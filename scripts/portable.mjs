@@ -4,12 +4,12 @@
  * Run after `tauri build`:
  *   npm run dist:portable
  *
- * Output: release/NSZ Desktop/
+ * Output: release/NSCB Desktop/
  */
 import { cpSync, mkdirSync, rmSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 
-const PRODUCT_NAME = 'NSZ Desktop';
+const PRODUCT_NAME = 'NSCB Desktop';
 const RELEASE_DIR = 'release';
 const OUT = join(RELEASE_DIR, PRODUCT_NAME);
 const TARGET_DIR = join('src-tauri', 'target', 'release');

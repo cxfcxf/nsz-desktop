@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import * as api from './lib/api';
-import { getRunner } from './lib/nsz-runner';
+import { getRunner } from './lib/nscb-runner';
 
 // ============================================================
 // SVG Icons
@@ -116,7 +116,7 @@ function useRunnerEvents(operationNames: string | string[]) {
                     });
                 }
             }),
-            runner.on('nsz-error', (data) => {
+            runner.on('nscb-error', (data) => {
                 if (matchesOp(data)) {
                     setOutputLines(prev => [...prev, `ERROR: ${data.message}`]);
                 }
@@ -175,7 +175,7 @@ function Sidebar({ activePage, onNavigate }: { activePage: string; onNavigate: (
             <div className="sidebar-brand">
                 <div className="brand-logo">{Icons.switchLogo}</div>
                 <div className="brand-text">
-                    <h1>NSZ Desktop</h1>
+                    <h1>NSCB Desktop</h1>
                     <span>v1.0.0</span>
                 </div>
             </div>
@@ -920,7 +920,7 @@ function SetupPage({
         <div className="setup-screen">
             <div className="setup-card">
                 <div className="setup-logo">{Icons.switchLogo}</div>
-                <h1 className="setup-title">NSZ Desktop</h1>
+                <h1 className="setup-title">NSCB Desktop</h1>
                 <p className="setup-subtitle">
                     One-time setup: import keys and backend executable
                 </p>
@@ -971,7 +971,7 @@ function SetupPage({
                 )}
 
                 <div className="setup-footer">
-                    NSZ Desktop v1.0.0
+                    NSCB Desktop v1.0.0
                 </div>
             </div>
         </div>
@@ -994,7 +994,7 @@ const PAGES: Record<string, React.FC> = {
 
 async function checkSetupState() {
     const [dir, keys, backend] = await Promise.all([
-        api.getNszDir(),
+        api.getToolsDirOrNull(),
         api.hasKeys(),
         api.hasBackend(),
     ]);
@@ -1004,13 +1004,13 @@ async function checkSetupState() {
 export default function App() {
     const [activePage, setActivePage] = useState('compress');
     const [toasts, setToasts] = useState<{ id: number; message: string; type: string }[]>([]);
-    const [nszDir, setNszDir] = useState<string | null>(null);
+    const [toolsDir, setToolsDir] = useState<string | null>(null);
     const [hasKeysState, setHasKeys] = useState(false);
     const [hasBackendState, setHasBackend] = useState(false);
     const [loading, setLoading] = useState(true);
 
     function applySetupState(state: { dir: string | null; keys: boolean; backend: boolean }) {
-        setNszDir(state.dir);
+        setToolsDir(state.dir);
         setHasKeys(state.keys);
         setHasBackend(state.backend);
     }
@@ -1032,7 +1032,7 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        const unsub = runner.on('nsz-error', (data) => {
+        const unsub = runner.on('nscb-error', (data) => {
             addToast(data.message || String(data), 'error');
         });
         return unsub;
@@ -1041,7 +1041,7 @@ export default function App() {
     const handleSetupComplete = async () => {
         const state = await checkSetupState();
         applySetupState(state);
-        if (state.dir) runner.setNszDir(state.dir);
+        if (state.dir) runner.setToolsDir(state.dir);
         addToast('Ready to go!', 'success');
     };
 
@@ -1056,7 +1056,7 @@ export default function App() {
         );
     }
 
-    if (!nszDir || !hasKeysState || !hasBackendState) {
+    if (!toolsDir || !hasKeysState || !hasBackendState) {
         return (
             <>
                 <SetupPage

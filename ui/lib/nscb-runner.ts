@@ -7,7 +7,7 @@ export interface RunnerEvent {
     output: { op: string; line: string };
     status: { op: string; action: string; detail: string };
     done: { op: string; code: number };
-    'nsz-error': { op: string; message: string };
+    'nscb-error': { op: string; message: string };
     log: string;
 }
 
@@ -40,7 +40,7 @@ type StdoutPayload = { op: string; line: string };
 type StderrPayload = { op: string; chunk: string };
 type DonePayload = { op: string; code: number };
 
-export class NszRunner extends Emitter {
+export class NscbRunner extends Emitter {
     private childProcess: { kill: () => Promise<void> } | null = null;
     private toolsDir: string | null = null;
     currentOperation: string | null = null;
@@ -63,14 +63,14 @@ export class NszRunner extends Emitter {
         }
 
         if (this.backendUnlisten.length === 0) {
-            this.backendUnlisten.push(await listen<StdoutPayload>('nsz-stdout', (event) => {
+            this.backendUnlisten.push(await listen<StdoutPayload>('nscb-stdout', (event) => {
                 const { op, line } = event.payload;
                 this.lastOutputLine = line;
                 this.emit('output', { op, line });
                 this.parseLine(op, line);
             }));
 
-            this.backendUnlisten.push(await listen<StderrPayload>('nsz-stderr', (event) => {
+            this.backendUnlisten.push(await listen<StderrPayload>('nscb-stderr', (event) => {
                 const { op, chunk } = event.payload;
                 const clean = this.normalizeProgressText(chunk);
                 const trimmed = clean.trim();
@@ -80,7 +80,7 @@ export class NszRunner extends Emitter {
                 this.parseStderrChunk(op, clean);
             }));
 
-            this.backendUnlisten.push(await listen<DonePayload>('nsz-done', (event) => {
+            this.backendUnlisten.push(await listen<DonePayload>('nscb-done', (event) => {
                 const { op, code } = event.payload;
                 if (this.currentOperation === op) {
                     this.childProcess = null;
@@ -110,7 +110,7 @@ export class NszRunner extends Emitter {
         return this._ready;
     }
 
-    setNszDir(dir: string): void {
+    setToolsDir(dir: string): void {
         this.toolsDir = dir;
     }
 
@@ -194,7 +194,7 @@ export class NszRunner extends Emitter {
             } catch (error) {
                 this.childProcess = null;
                 this.doneResolver = null;
-                this.emit('nsz-error', { op: operation, message: `Failed to start nscb_rust: ${String(error)}` });
+                this.emit('nscb-error', { op: operation, message: `Failed to start nscb_rust: ${String(error)}` });
                 resolve(-1);
             }
         });
@@ -202,7 +202,7 @@ export class NszRunner extends Emitter {
 
     async run(operation: string, files: string[], options: Record<string, any> = {}): Promise<void> {
         if (this.childProcess) {
-            this.emit('nsz-error', { op: operation, message: `A process is already running (${this.currentOperation})` });
+            this.emit('nscb-error', { op: operation, message: `A process is already running (${this.currentOperation})` });
             return;
         }
 
@@ -232,7 +232,7 @@ export class NszRunner extends Emitter {
             const code = await this.startBackendRun(operation, args);
             if (code !== 0) {
                 this.currentOperation = null;
-                this.emit('nsz-error', {
+                this.emit('nscb-error', {
                     op: operation,
                     message: this.lastOutputLine
                         ? `nscb_rust exited with code ${code}: ${this.lastOutputLine}`
@@ -281,7 +281,7 @@ export class NszRunner extends Emitter {
         }
 
         if (cleanLine.toLowerCase().includes('error')) {
-            this.emit('nsz-error', { op, message: cleanLine });
+            this.emit('nscb-error', { op, message: cleanLine });
         }
     }
 
@@ -289,7 +289,7 @@ export class NszRunner extends Emitter {
         if (text.toLowerCase().includes('error:')) {
             const errorMatch = text.match(/error:\s*(.+?)(?:\s{2,}|$)/i);
             if (errorMatch) {
-                this.emit('nsz-error', { op, message: errorMatch[1].trim() });
+                this.emit('nscb-error', { op, message: errorMatch[1].trim() });
             }
             return;
         }
@@ -311,7 +311,7 @@ export class NszRunner extends Emitter {
             TiB: 1099511627776,
         };
 
-        const byteMatch = NszRunner.lastMatch(
+        const byteMatch = NscbRunner.lastMatch(
             /(\d+(?:\.\d+)?)\s*(B|KiB|MiB|GiB|KB|MB|GB|TB|TiB)\s*\/\s*(\d+(?:\.\d+)?)\s*(B|KiB|MiB|GiB|KB|MB|GB|TB|TiB)/gi,
             text,
         );
@@ -328,7 +328,7 @@ export class NszRunner extends Emitter {
             }
         }
 
-        const itemMatch = NszRunner.lastMatch(/(\d+)\s*\/\s*(\d+)/g, text);
+        const itemMatch = NscbRunner.lastMatch(/(\d+)\s*\/\s*(\d+)/g, text);
         if (itemMatch) {
             const pos = parseInt(itemMatch[1]);
             const len = parseInt(itemMatch[2]);
@@ -374,11 +374,11 @@ export class NszRunner extends Emitter {
     }
 }
 
-let instance: NszRunner | null = null;
+let instance: NscbRunner | null = null;
 
-export function getRunner(): NszRunner {
+export function getRunner(): NscbRunner {
     if (!instance) {
-        instance = new NszRunner();
+        instance = new NscbRunner();
     }
     return instance;
 }

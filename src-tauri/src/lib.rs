@@ -31,7 +31,7 @@ fn app_tools_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
         .path()
         .temp_dir()
         .map_err(|e| format!("Failed to resolve temp dir: {e}"))?;
-    let tools_dir = temp_dir.join("nsz-desktop-tools");
+    let tools_dir = temp_dir.join("nscb-desktop-tools");
     std::fs::create_dir_all(&tools_dir)
         .map_err(|e| format!("Failed to create tools dir: {e}"))?;
     Ok(tools_dir)
@@ -163,7 +163,7 @@ fn run_nscb(app: tauri::AppHandle, operation: String, args: Vec<String>) -> Resu
                         let trimmed = line.trim();
                         if !trimmed.is_empty() {
                             let _ = app_for_out.emit(
-                                "nsz-stdout",
+                                "nscb-stdout",
                                 StdoutEvent {
                                     op: op_for_out.clone(),
                                     line: trimmed.to_string(),
@@ -188,7 +188,7 @@ fn run_nscb(app: tauri::AppHandle, operation: String, args: Vec<String>) -> Resu
                         let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
                         if !chunk.trim().is_empty() {
                             let _ = app_for_err.emit(
-                                "nsz-stderr",
+                                "nscb-stderr",
                                 StderrEvent {
                                     op: op_for_err.clone(),
                                     chunk,
@@ -211,7 +211,7 @@ fn run_nscb(app: tauri::AppHandle, operation: String, args: Vec<String>) -> Resu
                 *pid_lock = None;
             }
             let _ = app.emit(
-                "nsz-done",
+                "nscb-done",
                 DoneEvent {
                     op: op_for_done,
                     code,
