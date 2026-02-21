@@ -442,12 +442,10 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
     const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
     const [options, setOptions] = useState<Record<string, any>>({});
 
-    // Auto-populate output dir from first file's directory
+    // Always set output dir to first file's directory
     useEffect(() => {
-        if (files.length > 0 && !outputDir) {
-            setOutputDir(getDirectory(files[0]));
-        }
-    }, [files.length > 0]);
+        setOutputDir(files.length > 0 ? getDirectory(files[0]) : '');
+    }, [files]);
 
     const setOption = useCallback((key: string, value: any) => {
         setOptions(prev => ({ ...prev, [key]: value }));
