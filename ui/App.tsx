@@ -442,6 +442,13 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
     const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
     const [options, setOptions] = useState<Record<string, any>>({});
 
+    // Auto-populate output dir from first file's directory
+    useEffect(() => {
+        if (files.length > 0 && !outputDir) {
+            setOutputDir(getDirectory(files[0]));
+        }
+    }, [files.length > 0]);
+
     const setOption = useCallback((key: string, value: any) => {
         setOptions(prev => ({ ...prev, [key]: value }));
     }, []);
@@ -774,32 +781,56 @@ function CreatePage() {
     );
 }
 
-function SettingsPage() {
-    const [settings, setSettings] = useState({
-        defaultLevel: 18,
-        defaultOutputDir: '',
-    });
-    const [saved, setSaved] = useState(false);
+function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
+    const [backendVersion, setBackendVersion] = useState<string | null>(null);
+    const [keysInstalled, setKeysInstalled] = useState(false);
+    const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+    const [checkingUpdate, setCheckingUpdate] = useState(false);
 
     useEffect(() => {
-        api.loadSettings().then(s => {
-            if (s && Object.keys(s).length > 0) setSettings(prev => ({ ...prev, ...s }));
-        });
+        api.getInstalledVersion().then(setBackendVersion);
+        api.hasKeys().then(setKeysInstalled);
     }, []);
 
-    const handleSave = async () => {
-        await api.saveSettings(settings);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+    const handleCheckUpdate = async () => {
+        setCheckingUpdate(true);
+        setUpdateStatus(null);
+        try {
+            const release = await api.fetchLatestRelease();
+            if (!release) {
+                setUpdateStatus('Could not reach GitHub. Check your network connection.');
+            } else if (backendVersion && release.tag === backendVersion) {
+                setUpdateStatus(`Already up to date (${backendVersion})`);
+            } else {
+                setUpdateStatus(`Downloading ${release.tag}...`);
+                await api.downloadBackend(release.downloadUrl);
+                await api.saveInstalledVersion(release.tag);
+                setBackendVersion(release.tag);
+                setUpdateStatus(`Updated to ${release.tag}`);
+                onBackendChanged?.();
+            }
+        } catch (e: any) {
+            setUpdateStatus(`Update failed: ${e.message || e}`);
+        } finally {
+            setCheckingUpdate(false);
+        }
     };
 
-    const update = (key: string, value: any) => {
-        setSettings(prev => ({ ...prev, [key]: value }));
+    const handleImportBackend = async () => {
+        const result = await api.importBackend();
+        if (result.ok) {
+            setBackendVersion(null);
+            await api.saveInstalledVersion('');
+            setUpdateStatus('Backend imported manually');
+            onBackendChanged?.();
+        } else if (result.error) {
+            setUpdateStatus(result.error);
+        }
     };
 
-    const handleSelectDir = async () => {
-        const dir = await api.selectOutputDir();
-        if (dir) update('defaultOutputDir', dir);
+    const handleImportKeys = async () => {
+        const result = await api.importKeys();
+        if (result.ok) setKeysInstalled(true);
     };
 
     return (
@@ -808,68 +839,50 @@ function SettingsPage() {
                 <div className="page-icon accent-settings">{Icons.settings}</div>
                 <div>
                     <h2>Settings</h2>
-                    <p>Default options for operations</p>
+                    <p>Manage backend binary and encryption keys</p>
                 </div>
             </div>
 
             <div className="settings-grid">
                 <div className="settings-section">
-                    <h3 className="settings-section-title">Compression Defaults</h3>
+                    <h3 className="settings-section-title">Tools</h3>
 
                     <div className="settings-row">
                         <div className="settings-row-label">
-                            <h4>Default Compression Level</h4>
-                            <p>1 (fast) to 22 (ultra). Default: 18</p>
+                            <h4>Backend Binary (nscb_rust.exe)</h4>
+                            <p>{backendVersion ? `Installed: ${backendVersion}` : 'Unknown version (manually imported)'}</p>
                         </div>
                         <div className="settings-row-control">
-                            <div className="slider-control">
-                                <input
-                                    type="range"
-                                    min="1"
-                                    max="22"
-                                    value={settings.defaultLevel}
-                                    onChange={(e) => update('defaultLevel', Number(e.target.value))}
-                                />
-                                <span className="slider-value">{settings.defaultLevel}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="settings-section">
-                    <h3 className="settings-section-title">Paths</h3>
-                    <div className="settings-row">
-                        <div className="settings-row-label">
-                            <h4>Default Output Directory</h4>
-                            <p>Where processed files are saved by default</p>
-                        </div>
-                        <div className="settings-row-control" style={{ minWidth: '280px' }}>
-                            <div className="dir-picker-row">
-                                <input
-                                    type="text"
-                                    value={settings.defaultOutputDir}
-                                    onChange={(e) => update('defaultOutputDir', e.target.value)}
-                                    placeholder="Same as source"
-                                />
-                                <button className="btn btn-secondary btn-sm" onClick={handleSelectDir}>
-                                    Browse
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={handleCheckUpdate}
+                                    disabled={checkingUpdate}
+                                >
+                                    {checkingUpdate ? 'Checking...' : 'Check for Update'}
+                                </button>
+                                <button className="btn btn-ghost btn-sm" onClick={handleImportBackend}>
+                                    Import Manually
                                 </button>
                             </div>
+                            {updateStatus && (
+                                <p style={{ marginTop: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>{updateStatus}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="settings-row">
+                        <div className="settings-row-label">
+                            <h4>Encryption Keys</h4>
+                            <p>{keysInstalled ? 'Keys installed' : 'No keys found'}</p>
+                        </div>
+                        <div className="settings-row-control">
+                            <button className="btn btn-secondary btn-sm" onClick={handleImportKeys}>
+                                {Icons.key} Import Keys
+                            </button>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div className="actions-bar">
-                <span className="spacer" />
-                {saved && (
-                    <span className="save-confirm">
-                        {Icons.check} Settings saved!
-                    </span>
-                )}
-                <button className="btn btn-primary" onClick={handleSave}>
-                    {Icons.save} Save Settings
-                </button>
             </div>
         </div>
     );
@@ -881,40 +894,24 @@ function SettingsPage() {
 
 function SetupPage({
     onComplete,
-    needsKeys,
-    needsBackend,
 }: {
     onComplete: () => void;
-    needsKeys: boolean;
-    needsBackend: boolean;
 }) {
     const [error, setError] = useState('');
-    const [checkingKeys, setCheckingKeys] = useState(false);
-    const [checkingBackend, setCheckingBackend] = useState(false);
-    const [hasKeys, setHasKeys] = useState(!needsKeys);
-    const [hasBackend, setHasBackend] = useState(!needsBackend);
-    const checking = checkingKeys || checkingBackend;
+    const [checking, setChecking] = useState(false);
 
-    async function handleImport(
-        importFn: () => Promise<{ ok: boolean; error?: string }>,
-        setChecking: (v: boolean) => void,
-    ) {
+    const handleImportKeys = async () => {
         setError('');
         setChecking(true);
-        const result = await importFn();
+        const result = await api.importKeys();
         setChecking(false);
         if (result.ok) {
-            const [keys, backend] = await Promise.all([api.hasKeys(), api.hasBackend()]);
-            setHasKeys(keys);
-            setHasBackend(backend);
-            if (keys && backend) onComplete();
+            const keys = await api.hasKeys();
+            if (keys) onComplete();
         } else if (result.error) {
             setError(result.error);
         }
-    }
-
-    const handleImportKeys = () => handleImport(api.importKeys, setCheckingKeys);
-    const handleImportBackend = () => handleImport(api.importBackend, setCheckingBackend);
+    };
 
     return (
         <div className="setup-screen">
@@ -922,46 +919,28 @@ function SetupPage({
                 <div className="setup-logo">{Icons.switchLogo}</div>
                 <h1 className="setup-title">NSCB Desktop</h1>
                 <p className="setup-subtitle">
-                    One-time setup: import keys and backend executable
+                    One-time setup: import encryption keys
                 </p>
 
                 <div className="setup-divider" />
 
                 <div className="setup-checklist">
-                    <div className={`setup-check-item ${hasKeys ? 'done' : ''}`}>
+                    <div className="setup-check-item">
                         <span className="setup-check-icon">
-                            {hasKeys ? Icons.check : Icons.key}
+                            {Icons.key}
                         </span>
                         <span>Encryption keys (<code>prod.keys</code>)</span>
-                    </div>
-                    <div className={`setup-check-item ${hasBackend ? 'done' : ''}`}>
-                        <span className="setup-check-icon">
-                            {hasBackend ? Icons.check : Icons.download}
-                        </span>
-                        <span>Backend binary (<code>nscb_rust.exe</code>)</span>
                     </div>
                 </div>
 
                 <div className="setup-actions">
-                    {!hasKeys && (
-                        <button
-                            className="btn btn-primary btn-lg setup-btn"
-                            onClick={handleImportKeys}
-                            disabled={checking}
-                        >
-                            {checkingKeys ? 'Importing...' : <>{Icons.key} Import Keys File</>}
-                        </button>
-                    )}
-
-                    {!hasBackend && (
-                        <button
-                            className="btn btn-primary btn-lg setup-btn"
-                            onClick={handleImportBackend}
-                            disabled={checking}
-                        >
-                            {checkingBackend ? 'Importing...' : <>{Icons.download} Import nscb_rust.exe</>}
-                        </button>
-                    )}
+                    <button
+                        className="btn btn-primary btn-lg setup-btn"
+                        onClick={handleImportKeys}
+                        disabled={checking}
+                    >
+                        {checking ? 'Importing...' : <>{Icons.key} Import Keys File</>}
+                    </button>
                 </div>
 
                 {error && (
@@ -978,6 +957,18 @@ function SetupPage({
     );
 }
 
+function MissingBackendBanner({ onGoToSettings }: { onGoToSettings: () => void }) {
+    return (
+        <div className="missing-backend-banner">
+            {Icons.alertCircle}
+            <span><strong>nscb_rust.exe</strong> is missing. Go to Settings &gt; Tools to download or import it.</span>
+            <button className="btn btn-secondary btn-sm" onClick={onGoToSettings}>
+                Open Settings
+            </button>
+        </div>
+    );
+}
+
 // ============================================================
 // App Root
 // ============================================================
@@ -989,7 +980,6 @@ const PAGES: Record<string, React.FC> = {
     convert: ConvertPage,
     split: SplitPage,
     create: CreatePage,
-    settings: SettingsPage,
 };
 
 async function checkSetupState() {
@@ -1045,6 +1035,11 @@ export default function App() {
         addToast('Ready to go!', 'success');
     };
 
+    const refreshBackendState = async () => {
+        const backend = await api.hasBackend();
+        setHasBackend(backend);
+    };
+
     if (loading) {
         return (
             <div className="setup-screen">
@@ -1056,14 +1051,10 @@ export default function App() {
         );
     }
 
-    if (!toolsDir || !hasKeysState || !hasBackendState) {
+    if (!toolsDir || !hasKeysState) {
         return (
             <>
-                <SetupPage
-                    onComplete={handleSetupComplete}
-                    needsKeys={!hasKeysState}
-                    needsBackend={!hasBackendState}
-                />
+                <SetupPage onComplete={handleSetupComplete} />
                 <ToastContainer toasts={toasts} />
             </>
         );
@@ -1073,11 +1064,17 @@ export default function App() {
         <div className="app-shell">
             <Sidebar activePage={activePage} onNavigate={setActivePage} />
             <main className="main-content">
+                {!hasBackendState && (
+                    <MissingBackendBanner onGoToSettings={() => setActivePage('settings')} />
+                )}
                 {Object.entries(PAGES).map(([id, PageComponent]) => (
                     <div key={id} style={{ display: activePage === id ? 'block' : 'none' }}>
                         <PageComponent />
                     </div>
                 ))}
+                <div style={{ display: activePage === 'settings' ? 'block' : 'none' }}>
+                    <SettingsPage onBackendChanged={refreshBackendState} />
+                </div>
             </main>
             <ToastContainer toasts={toasts} />
         </div>

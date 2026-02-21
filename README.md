@@ -16,23 +16,23 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 - Live output console + progress tracking
 - Batch support for compress/decompress/convert/split
 - Dark theme UI with SVG iconography and file type badges
-- First-launch setup wizard with import checklist
+- Auto-download `nscb_rust.exe` from GitHub releases, or import manually
+- First-launch setup wizard for encryption keys
 
 ## Prerequisites
 
 - Windows 10/11
 - WebView2 runtime
 - Switch keys file (`prod.keys` or `keys.txt`)
-- `nscb_rust.exe` backend binary (imported during setup)
+- `nscb_rust.exe` backend binary (auto-downloaded or imported via Settings)
 
 ## Usage
 
 1. Run `nscb-desktop.exe` directly (standalone, no install needed), or use the NSIS/MSI installer.
-2. The setup wizard will prompt you to import:
-   - **Encryption keys** (`prod.keys` or `keys.txt`) — each item shows a checkmark once imported
-   - **Backend binary** (`nscb_rust.exe`)
-3. Files are copied to a temporary tools directory (`%TEMP%\nscb-desktop-tools`).
-4. Pick an operation from the sidebar and drop your files.
+2. On first launch, the setup wizard prompts you to import **encryption keys** (`prod.keys` or `keys.txt`).
+3. If `nscb_rust.exe` is missing, a banner directs you to **Settings > Tools** where you can download it from GitHub or import manually.
+4. Files are copied to a temporary tools directory (`%TEMP%\nscb-desktop-tools`).
+5. Pick an operation from the sidebar and drop your files.
 
 ## Development
 

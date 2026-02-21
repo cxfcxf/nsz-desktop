@@ -917,6 +917,28 @@ select {
 }
 
 /* ---- Toast Notifications ---- */
+.missing-backend-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  background: rgba(210, 153, 34, 0.1);
+  border: 1px solid rgba(210, 153, 34, 0.3);
+  border-radius: var(--radius-md);
+  color: var(--accent-warning);
+  font-size: var(--font-size-sm);
+}
+
+.missing-backend-banner span {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.missing-backend-banner strong {
+  color: var(--accent-warning);
+}
+
 .toast-container {
   position: fixed;
   bottom: var(--space-lg);

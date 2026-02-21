@@ -1,47 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog';
-import { readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-fs';
-import { join } from '@tauri-apps/api/path';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-
-async function getAppDataPath(): Promise<string> {
-    return '.';
-}
-
-async function getSettingsPath(): Promise<string> {
-    const dir = await getAppDataPath();
-    return await join(dir, 'settings.json');
-}
-
-export async function loadSettings(): Promise<Record<string, any>> {
-    try {
-        const path = await getSettingsPath();
-        if (await exists(path)) {
-            const text = await readTextFile(path);
-            return JSON.parse(text);
-        }
-    } catch (e) {
-        console.error('Failed to load settings:', e);
-    }
-    return {};
-}
-
-export async function saveSettings(settings: Record<string, any>): Promise<boolean> {
-    try {
-        const dir = await getAppDataPath();
-        if (!(await exists(dir))) {
-            await mkdir(dir, { recursive: true });
-        }
-        const current = await loadSettings();
-        const merged = { ...current, ...settings };
-        const path = await getSettingsPath();
-        await writeTextFile(path, JSON.stringify(merged, null, 2));
-        return true;
-    } catch (e) {
-        console.error('Failed to save settings:', e);
-        return false;
-    }
-}
 
 let cachedToolsDir: string | null = null;
 
@@ -147,4 +106,44 @@ export async function selectOutputDir(): Promise<string | null> {
 
 export async function openExternal(url: string): Promise<void> {
     await openUrl(url);
+}
+
+// GitHub release helpers
+
+export interface ReleaseInfo {
+    tag: string;
+    downloadUrl: string;
+}
+
+export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
+    try {
+        const res = await fetch('https://api.github.com/repos/cxfcxf/nscb_rust/releases/latest');
+        if (!res.ok) return null;
+        const data = await res.json();
+        const tag: string = data.tag_name ?? '';
+        const asset = (data.assets as any[])?.find(
+            (a: any) => typeof a.name === 'string' && a.name.endsWith('.exe'),
+        );
+        if (!asset?.browser_download_url) return null;
+        return { tag, downloadUrl: asset.browser_download_url };
+    } catch {
+        return null;
+    }
+}
+
+export async function downloadBackend(url: string): Promise<void> {
+    await invoke('download_backend', { url });
+}
+
+export async function getInstalledVersion(): Promise<string | null> {
+    try {
+        const v = await invoke<string>('get_backend_version');
+        return v || null;
+    } catch {
+        return null;
+    }
+}
+
+export async function saveInstalledVersion(tag: string): Promise<void> {
+    await invoke('save_backend_version', { version: tag });
 }

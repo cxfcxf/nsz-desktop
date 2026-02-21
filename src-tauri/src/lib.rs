@@ -224,6 +224,44 @@ fn run_nscb(app: tauri::AppHandle, operation: String, args: Vec<String>) -> Resu
 }
 
 #[tauri::command]
+fn get_backend_version(app: tauri::AppHandle) -> Result<String, String> {
+    let tools_dir = app_tools_dir(&app)?;
+    let version_file = tools_dir.join("version.txt");
+    if version_file.exists() {
+        std::fs::read_to_string(&version_file)
+            .map(|s| s.trim().to_string())
+            .map_err(|e| format!("Failed to read version: {e}"))
+    } else {
+        Ok(String::new())
+    }
+}
+
+#[tauri::command]
+fn save_backend_version(app: tauri::AppHandle, version: String) -> Result<(), String> {
+    let tools_dir = app_tools_dir(&app)?;
+    std::fs::write(tools_dir.join("version.txt"), version.as_bytes())
+        .map_err(|e| format!("Failed to save version: {e}"))
+}
+
+#[tauri::command]
+fn download_backend(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let tools_dir = app_tools_dir(&app)?;
+    let dst = tools_dir.join("nscb_rust.exe");
+
+    let response = reqwest::blocking::get(&url)
+        .map_err(|e| format!("Download failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Download returned HTTP {}", response.status()));
+    }
+    let bytes = response
+        .bytes()
+        .map_err(|e| format!("Failed to read response body: {e}"))?;
+    std::fs::write(&dst, &bytes)
+        .map_err(|e| format!("Failed to save nscb_rust.exe: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn cancel_nscb() -> Result<(), String> {
     let pid_opt = {
         let mut lock = running_pid()
@@ -262,6 +300,9 @@ pub fn run() {
             get_tools_dir,
             has_keys,
             has_backend,
+            get_backend_version,
+            save_backend_version,
+            download_backend,
             run_nscb,
             cancel_nscb
         ])
