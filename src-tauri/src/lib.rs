@@ -1,9 +1,14 @@
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Read};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use tauri::Manager;
 use tauri::Emitter;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn app_root_dir() -> Result<std::path::PathBuf, String> {
     #[cfg(debug_assertions)]
@@ -130,13 +135,15 @@ fn run_nscb(app: tauri::AppHandle, operation: String, args: Vec<String>) -> Resu
         let exe_path = nscb_exe_path(&app)?;
         let work_dir = app_root_dir()?;
 
-        let mut child = Command::new(exe_path)
-            .args(args)
+        let mut cmd = Command::new(exe_path);
+        cmd.args(args)
             .current_dir(work_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start nscb_rust.exe: {e}"))?;
 
         *lock = Some(child.id());
@@ -273,11 +280,12 @@ fn cancel_nscb() -> Result<(), String> {
     if let Some(pid) = pid_opt {
         #[cfg(target_os = "windows")]
         {
-            let status = Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
+                .stderr(Stdio::null());
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            let status = cmd.status()
                 .map_err(|e| format!("Failed to stop process: {e}"))?;
             if !status.success() {
                 return Err("Failed to stop running process".to_string());
